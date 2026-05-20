@@ -1,0 +1,47 @@
+name: Bug report / 缺陷报告
+description: 报告 DiagKit.Dbc 中可复现的问题
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告问题。除非硬件 SDK、UI 或应用工作流细节是复现核心库行为所必需的，否则请尽量把它们与 DiagKit.Dbc 核心问题分开描述。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题现象
+      description: 实际发生了什么？你期望的行为是什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现方式
+      description: 请提供能复现问题的最小代码、DBC 片段、帧 payload 或命令。
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics / 输出
+      description: 如果有，请附上 `DbcDiagnostic` 输出、测试失败文本或 benchmark 输出。
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: DiagKit.Dbc 版本或 commit
+      placeholder: 1.0.0-preview or git commit
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: .NET SDK 版本、操作系统，以及相关宿主应用信息。
+      render: text

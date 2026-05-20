@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DiagKit.Dbc/DiagKit.Dbc.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DiagKit.Dbc.Benchmarks/DiagKit.Dbc.Benchmarks.csproj" />
+    <Project Path="tests/DiagKit.Dbc.Tests/DiagKit.Dbc.Tests.csproj" />
+  </Folder>
+</Solution>

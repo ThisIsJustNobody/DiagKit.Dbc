@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue / 安全问题
+    url: https://github.com/ThisIsJustNobody/DiagKit.Dbc/security/advisories/new
+    about: 请通过私有渠道报告安全敏感问题。

@@ -1,0 +1,63 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DiagKit.Dbc</RootNamespace>
+    <AssemblyName>DiagKit.Dbc</AssemblyName>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>true</IsPackable>
+
+    <!-- Version -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>1.0</MinVerMinimumMajorMinor>
+    <MinVerDefaultPreReleaseIdentifiers>preview</MinVerDefaultPreReleaseIdentifiers>
+    <ContinuousIntegrationBuild Condition="'$(Configuration)' == 'Release' Or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Package Metadata -->
+    <PackageId>DiagKit.Dbc</PackageId>
+    <Title>DiagKit DBC</Title>
+    <Description>DBC loading, CAN/CAN FD signal encoding and decoding, runtime channel state, signal samples, and hardware-agnostic periodic scheduling for diagnostic tooling.</Description>
+    <Authors>Eric YaRu YANG</Authors>
+    <Copyright>Copyright (c) 2026 Eric YaRu YANG</Copyright>
+    <PackageTags>can;canfd;dbc;automotive;diagnostics</PackageTags>
+
+    <!-- License -->
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+
+    <!-- Package Content -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>diagkit-dbc.png</PackageIcon>
+
+    <!-- Release -->
+    <PackageReleaseNotes>Initial preview release for DBC loading, CAN/CAN FD signal encode/decode, diagnostics, simple runtime facade, and hardware-agnostic periodic scheduling.</PackageReleaseNotes>
+
+    <!-- URL -->
+    <PackageProjectUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- Source Link + Symbols -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="README.zh-CN.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\assets\diagkit-dbc.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

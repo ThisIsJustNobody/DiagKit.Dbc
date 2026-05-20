@@ -1,0 +1,38 @@
+name: Feature request / 功能建议
+description: 为 DiagKit.Dbc 提出改进建议
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: 使用场景
+      description: 请描述需要支持的工作流或 DBC/CAN 行为。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-api
+    attributes:
+      label: 建议 API 或行为
+      description: 如果已经有想法，请附上小示例。
+      render: csharp
+
+  - type: textarea
+    id: dbc-sample
+    attributes:
+      label: DBC 或帧样本
+      description: 如相关，请提供脱敏后的最小 DBC 片段或 CAN payload。
+      render: text
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 领域
+      options:
+        - Loader / diagnostics
+        - Signal codec
+        - Runtime / scheduling
+        - Packaging / documentation
+        - Other / 其他
