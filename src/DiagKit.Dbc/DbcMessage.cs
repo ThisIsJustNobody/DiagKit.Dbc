@@ -207,7 +207,8 @@ public sealed class DbcMessage
         ArgumentException.ThrowIfNullOrWhiteSpace(signalName);
         if (!signalsByName.TryGetValue(signalName, out var matches))
         {
-            throw new DbcException($"Signal '{signalName}' was not found in message '{Name}'.");
+            throw new DbcException(
+                $"Signal '{Name}.{signalName}' was not found. DBC name lookup is case-sensitive; check message '{Name}' Signals for available signal names.");
         }
 
         return matches.Length == 1

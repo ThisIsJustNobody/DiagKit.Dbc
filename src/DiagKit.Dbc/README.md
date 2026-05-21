@@ -13,6 +13,8 @@
 
 - Load DBC files with `Strict` or `Lenient` diagnostics.
 - Use grouped `DbcDiagnosticFormatter`, `Errors` / `Warnings`, `SignalPath`, and simple facades for first-use and migration scenarios.
+- Load immutable documents directly with `DbcLoader.LoadDocumentOrThrow(...)` when runtime state is not needed.
+- Enumerate `DbcSignalViewSnapshot` values for UI binding through `DbcSimpleRuntime` / `DbcSimpleChannel`.
 - Model nodes, messages, signals, environment variables, relation-attribute metadata, attributes, value tables, multiplexing, CAN identifiers, CAN FD flags, and source lines.
 - Encode and decode Intel/Motorola signals, signed values, floating-point signals, raw values, and physical values.
 - Use explicit write policies for range handling instead of silent correction.
@@ -29,6 +31,14 @@ The package is intentionally hardware-agnostic. It does not depend on CanHub, Ve
 J1939 is considered in the public boundaries, but the full J1939 protocol stack is not implemented in this package. Lenient loading may preserve J1939/transport payload metadata beyond 64 bytes; `DbcChannelRuntime` and CAN/CAN FD frame APIs only process messages where `SupportsSingleFrameRuntime` is `true`. Future protocol-specific behavior belongs in a separate extension layer.
 
 For a fuller integration guide, see [API usage guide](https://github.com/ThisIsJustNobody/DiagKit.Dbc/blob/main/docs/API.zh-CN.md).
+
+## Entry Points
+
+| Scenario | Start with | Notes |
+| --- | --- | --- |
+| First use, UI, scripts, tests | `DbcSimpleRuntime` | Loads a DBC, keeps diagnostics, and exposes `"Message.Signal"` convenience APIs. |
+| Production runtime state machine | `DbcRuntimeSession` / `DbcChannelRuntime` | Use pre-resolved handles, snapshots, sinks, and periodic polling. |
+| Low-level tools and metadata | `DbcLoader.LoadDocumentOrThrow`, `DbcDocument`, `DbcCodec` | Inspect DBC metadata or run stateless encode/decode without a runtime session. |
 
 ## 5-Minute Path
 

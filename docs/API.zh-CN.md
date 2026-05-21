@@ -2,6 +2,14 @@
 
 本文面向上层应用集成者，说明如何把 DBC 文档、CAN/CAN FD 帧、运行时状态、周期发送和波形/历史分析串起来。
 
+## 入口选择
+
+| 场景 | 建议入口 | 说明 |
+| --- | --- | --- |
+| 首次接入、UI、脚本、测试台 | `DbcSimpleRuntime` | 加载 DBC、保留 diagnostics，并提供 `"Message.Signal"` 便捷 API。 |
+| 生产运行时状态机 | `DbcRuntimeSession` / `DbcChannelRuntime` | 使用预解析 handle、snapshot、sink 和周期轮询，适合高频实时路径。 |
+| 底层工具和元数据处理 | `DbcLoader.LoadDocumentOrThrow`、`DbcDocument`、`DbcCodec` | 直接查看 DBC 元数据，或做无状态 encode/decode。 |
+
 ## 5 分钟黄金路径
 
 只解析 DBC 并查看消息/信号：
@@ -55,6 +63,12 @@ channel.PollDueFrames(now, txSink);
 - `EnvironmentVariables`: `EV_` 环境变量元数据。它不会被当作 CAN frame signal 参与编解码。
 - `RelationAttributeDefinitions` / `RelationAttributeDefaults` / `RelationAttributes`: `BA_DEF_REL_`、`BA_DEF_DEF_REL_`、`BA_REL_` 的可追溯原始元数据。首版不会猜测复杂关系目标并应用到 message/signal。
 
+只需要 DBC 元数据、暂时不需要 runtime 状态时，可以直接加载文档：
+
+```csharp
+var document = DbcLoader.LoadDocumentOrThrow("vehicle.dbc");
+```
+
 定位关系建议始终按 Message -> Signal：
 
 ```csharp
@@ -102,6 +116,7 @@ if (result.HasErrors)
 }
 
 var document = result.GetDocumentOrThrow();
+var sameDocument = DbcLoader.LoadDocumentOrThrow("vehicle.dbc", DbcLoadOptions.Strict);
 ```
 
 需要按严重级别和错误码做 UI 展示时，可先汇总：
@@ -265,6 +280,17 @@ if (view.ValueDescription is not null)
 ```
 
 `DbcSignalViewSnapshot` 会复制 value table，包含当前 raw/physical、quality、timestamp、unit、min/max 和当前 raw value 的可选描述。它是展示友好的快照，不替代低分配 sample/snapshot 热路径。
+
+UI 表格需要一次性绑定所有信号时，可使用 simple facade 的批量 view API：
+
+```csharp
+var rows = dbc.GetSignalViewSnapshots(now);
+var vehicleRows = dbc.GetSignalViewSnapshotsForMessage("VehicleStatus", now);
+var txRows = dbc.GetSignalViewSnapshotsTransmittedBy("VCU", now);
+var rxRows = dbc.GetSignalViewSnapshotsReceivedBy("HOST", now);
+```
+
+批量 view 按 DBC message 顺序和 signal 顺序输出；当前 CAN/CAN FD 单帧 runtime 不支持的 message 仍会返回带元数据的 `NoData` 行，方便 UI 不漏显示数据库内容。
 
 `DbcTimestampKind.MonotonicTicks` 表示单调 elapsed 时间，单位是 `TimeSpan.Ticks`，不要直接传入原始 Stopwatch 计数。
 timestamp kind 必须一致；`Unspecified` 不参与 timeout 判定。

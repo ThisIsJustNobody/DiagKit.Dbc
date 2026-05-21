@@ -102,7 +102,7 @@ public sealed class DbcChannelRuntime
 
         return TryResolveMessage(messageName, out var handle)
             ? handle
-            : throw new DbcException($"Message '{messageName}' was not found in channel '{Name}'.");
+            : throw new DbcException($"Message '{messageName}' was not found in channel '{Name}'. DBC name lookup is case-sensitive; check Document.Messages for available message names.");
     }
 
     /// <summary>
@@ -119,7 +119,7 @@ public sealed class DbcChannelRuntime
 
         return TryResolveMessage(identifier, out var handle)
             ? handle
-            : throw new DbcException($"Message '{identifier}' was not found in channel '{Name}'.");
+            : throw new DbcException($"Message '{identifier}' was not found in channel '{Name}'. Check Document.Messages for available CAN identifiers.");
     }
 
     /// <summary>
@@ -179,7 +179,7 @@ public sealed class DbcChannelRuntime
         {
             1 => new SignalHandle(messageHandle.Index, matchIndex, Session.Document.RuntimeToken, channelToken),
             > 1 => throw new DbcException($"Signal '{signalName}' is ambiguous in message '{message.Name}'. Use object-based runtime handle resolution."),
-            _ => throw new DbcException($"Signal '{signalName}' was not found in message '{message.Name}'."),
+            _ => throw new DbcException($"Signal '{message.Name}.{signalName}' was not found. DBC name lookup is case-sensitive; check message '{message.Name}' Signals for available signal names."),
         };
     }
 

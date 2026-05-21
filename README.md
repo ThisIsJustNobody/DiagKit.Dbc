@@ -31,6 +31,14 @@ DiagKit.Dbc.slnx             Solution
 
 The core library does not depend on CanHub or any hardware SDK. Applications adapt hardware frames to `DbcFrameView` for receive processing and consume due transmit frames through `IDbcFrameSink`.
 
+## Entry Points
+
+| Scenario | Start with | Notes |
+| --- | --- | --- |
+| First use, UI, scripts, tests | `DbcSimpleRuntime` | Loads a DBC, keeps diagnostics, and exposes `"Message.Signal"` convenience APIs. |
+| Production runtime state machine | `DbcRuntimeSession` / `DbcChannelRuntime` | Use pre-resolved handles, snapshots, sinks, and periodic polling. |
+| Low-level tools and metadata | `DbcLoader.LoadDocumentOrThrow`, `DbcDocument`, `DbcCodec` | Inspect DBC metadata or run stateless encode/decode without a runtime session. |
+
 See [API usage guide](docs/API.zh-CN.md).
 See [CanHub / external hardware adapter boundary](CANHUB-ADAPTER.zh-CN.md).
 

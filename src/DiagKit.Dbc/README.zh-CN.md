@@ -13,6 +13,8 @@
 
 - 以 `Strict` 或 `Lenient` 模式加载 DBC，并输出结构化 diagnostics。
 - 提供 `DbcDiagnosticFormatter` 分组输出、`Errors` / `Warnings`、`SignalPath` 和 Simple facade，降低首次接入和旧项目迁移成本。
+- 不需要运行时状态时，可用 `DbcLoader.LoadDocumentOrThrow(...)` 直接获取不可变文档。
+- 可通过 `DbcSimpleRuntime` / `DbcSimpleChannel` 批量枚举 `DbcSignalViewSnapshot`，方便 UI 绑定。
 - 建模 Node、Message、Signal、环境变量、关系属性元数据、属性、值表、复用信号、CAN identifier、CAN FD flags 和来源行号。
 - 编解码 Intel/Motorola 信号、 signed 值、浮点信号、raw 值和 physical 值。
 - 使用显式写入策略处理范围问题，避免静默修正关键语义。
@@ -29,6 +31,14 @@
 公共边界已经为 J1939 预留空间，但完整 J1939 协议栈不属于本包职责。Lenient 加载可保留超过 64 字节的 J1939/传输协议 payload 元数据；`DbcChannelRuntime` 和 CAN/CAN FD 帧 API 只处理 `SupportsSingleFrameRuntime == true` 的 message。后续协议层行为应放在独立扩展库中。
 
 更完整的集成说明见仓库文档：[API 使用指南](https://github.com/ThisIsJustNobody/DiagKit.Dbc/blob/main/docs/API.zh-CN.md)。
+
+## 入口选择
+
+| 场景 | 建议入口 | 说明 |
+| --- | --- | --- |
+| 首次接入、UI、脚本、测试台 | `DbcSimpleRuntime` | 加载 DBC、保留 diagnostics，并提供 `"Message.Signal"` 便捷 API。 |
+| 生产运行时状态机 | `DbcRuntimeSession` / `DbcChannelRuntime` | 使用预解析 handle、snapshot、sink 和周期轮询。 |
+| 底层工具和元数据处理 | `DbcLoader.LoadDocumentOrThrow`、`DbcDocument`、`DbcCodec` | 直接查看 DBC 元数据，或做无状态 encode/decode。 |
 
 ## 5 分钟黄金路径
 

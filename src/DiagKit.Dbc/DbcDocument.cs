@@ -173,7 +173,7 @@ public sealed class DbcDocument
     {
         return TryResolveMessage(messageName, out var message)
             ? message
-            : throw new DbcException($"Message '{messageName}' was not found.");
+            : throw CreateMessageNotFoundException(messageName);
     }
 
     /// <summary>
@@ -184,7 +184,7 @@ public sealed class DbcDocument
     {
         return TryResolveMessage(identifier, out var message)
             ? message
-            : throw new DbcException($"Message '{identifier}' was not found.");
+            : throw new DbcException($"Message '{identifier}' was not found. Check Document.Messages for available CAN identifiers.");
     }
 
     /// <summary>
@@ -221,7 +221,7 @@ public sealed class DbcDocument
     {
         return TryResolveMessage(messageName, out var message)
             ? message.ResolveSignal(signalName)
-            : throw new DbcException($"Message '{messageName}' was not found.");
+            : throw CreateMessageNotFoundException(messageName);
     }
 
     /// <summary>
@@ -306,5 +306,11 @@ public sealed class DbcDocument
         }
 
         return false;
+    }
+
+    private static DbcException CreateMessageNotFoundException(string messageName)
+    {
+        return new DbcException(
+            $"Message '{messageName}' was not found. DBC name lookup is case-sensitive; check Document.Messages for available message names.");
     }
 }
