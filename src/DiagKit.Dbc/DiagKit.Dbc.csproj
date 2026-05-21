@@ -35,7 +35,7 @@
     <PackageIcon>diagkit-dbc.png</PackageIcon>
 
     <!-- Release -->
-    <PackageReleaseNotes>Initial preview release for DBC loading, CAN/CAN FD signal encode/decode, diagnostics, simple runtime facade, and hardware-agnostic periodic scheduling.</PackageReleaseNotes>
+    <PackageReleaseNotes>Preview 1 usability update: direct document loading helpers, bulk UI-friendly signal view snapshots, clearer lookup diagnostics, and documented API entry layers.</PackageReleaseNotes>
 
     <!-- URL -->
     <PackageProjectUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc</PackageProjectUrl>

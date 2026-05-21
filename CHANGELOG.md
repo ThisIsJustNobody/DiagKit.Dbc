@@ -2,6 +2,15 @@
 
 本文件记录项目的重要变更。包版本由 Git tag 通过 MinVer 自动生成；当前预览版本为 `1.0.0-preview`。
 
+## 1.0.0-preview.1 - Unreleased
+
+### 易用性升级
+
+- `DbcLoader` 新增 `LoadDocument*` / `LoadTextDocument*` 便捷入口，减少只需要不可变文档时的加载样板。
+- `DbcSimpleRuntime` / `DbcSimpleChannel` 新增批量 `DbcSignalViewSnapshot` API，方便 UI 按全部信号、message、发送节点或接收节点绑定。
+- 常见 message/signal/path 解析异常补充大小写敏感、可用集合和歧义处理提示。
+- README 和中文 API 指南明确三层入口：简单使用、生产运行时状态机、底层工具。
+
 ## 1.0.0-preview - 2026-05-21
 
 ### 新增
