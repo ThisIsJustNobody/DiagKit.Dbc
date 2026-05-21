@@ -218,6 +218,53 @@ public sealed class DbcSimpleChannel
         return channel.GetSignalViewSnapshot(signalHandle, now);
     }
 
+    /// <summary>
+    /// 枚举所有 signal 的 UI-friendly 当前值与元数据快照。<br/>
+    /// Enumerates UI-friendly snapshots for all signals.
+    /// </summary>
+    public IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshots(DbcTimestamp now = default)
+    {
+        return GetSignalViewSnapshots(document.Messages, null, now);
+    }
+
+    /// <summary>
+    /// 枚举指定 message 下所有 signal 的 UI-friendly 当前值与元数据快照。<br/>
+    /// Enumerates UI-friendly snapshots for all signals in a message.
+    /// </summary>
+    public IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshotsForMessage(
+        string messageName,
+        DbcTimestamp now = default)
+    {
+        var message = document.ResolveMessage(messageName);
+        return GetSignalViewSnapshots([message], null, now);
+    }
+
+    /// <summary>
+    /// 枚举指定节点发送的所有 message 下 signal 的 UI-friendly 当前值与元数据快照。<br/>
+    /// Enumerates UI-friendly snapshots for signals in messages transmitted by a node.
+    /// </summary>
+    public IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshotsTransmittedBy(
+        string nodeName,
+        DbcTimestamp now = default)
+    {
+        return GetSignalViewSnapshots(document.GetMessagesTransmittedBy(nodeName), null, now);
+    }
+
+    /// <summary>
+    /// 枚举指定节点接收的 signal 的 UI-friendly 当前值与元数据快照。<br/>
+    /// Enumerates UI-friendly snapshots for signals received by a node.
+    /// </summary>
+    public IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshotsReceivedBy(
+        string nodeName,
+        DbcTimestamp now = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeName);
+        return GetSignalViewSnapshots(
+            document.GetMessagesReceivedBy(nodeName),
+            signal => ContainsNode(signal.Receivers, nodeName),
+            now);
+    }
+
     private bool TryResolveSignalPath(SignalPath signalPath, out SignalHandle signalHandle)
     {
         try
@@ -253,16 +300,76 @@ public sealed class DbcSimpleChannel
         var matches = message.FindSignals(signalPath.SignalName);
         if (matches.Count == 0)
         {
-            throw new DbcException($"Signal '{signalPath.SignalName}' was not found in message '{signalPath.MessageName}'.");
+            throw new DbcException(
+                $"Signal '{signalPath}' was not found. DBC name lookup is case-sensitive; check message '{signalPath.MessageName}' Signals for available signal names.");
         }
 
         if (matches.Count > 1)
         {
-            throw new DbcException($"Signal '{signalPath.SignalName}' is ambiguous in message '{signalPath.MessageName}'.");
+            throw new DbcException($"Signal '{signalPath}' is ambiguous. Use FindSignals(...) or object-based runtime handle resolution.");
         }
 
         var messageHandle = channel.ResolveMessage(signalPath.MessageName);
         return channel.ResolveSignal(messageHandle, matches[0]);
+    }
+
+    private IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshots(
+        IEnumerable<DbcMessage> messages,
+        Func<DbcSignal, bool>? includeSignal,
+        DbcTimestamp now)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        var snapshots = new List<DbcSignalViewSnapshot>();
+        foreach (var message in messages)
+        {
+            var hasRuntimeHandle = channel.TryResolveMessage(message.Name, out var messageHandle);
+            foreach (var signal in message.Signals)
+            {
+                if (includeSignal is not null && !includeSignal(signal))
+                {
+                    continue;
+                }
+
+                if (hasRuntimeHandle && channel.TryResolveSignal(messageHandle, signal, out var signalHandle))
+                {
+                    snapshots.Add(channel.GetSignalViewSnapshot(signalHandle, now));
+                    continue;
+                }
+
+                snapshots.Add(CreateNoDataViewSnapshot(message, signal));
+            }
+        }
+
+        return Array.AsReadOnly(snapshots.ToArray());
+    }
+
+    private static DbcSignalViewSnapshot CreateNoDataViewSnapshot(DbcMessage message, DbcSignal signal)
+    {
+        return new DbcSignalViewSnapshot(
+            message.Identifier,
+            message.Name,
+            signal.Name,
+            DbcTimestamp.Unspecified,
+            0,
+            double.NaN,
+            SignalQuality.NoData,
+            signal.Unit,
+            signal.Minimum,
+            signal.Maximum,
+            signal.ValueDescriptions);
+    }
+
+    private static bool ContainsNode(IReadOnlyList<DbcNode> nodes, string nodeName)
+    {
+        foreach (var node in nodes)
+        {
+            if (string.Equals(node.Name, nodeName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private sealed class CapturingFrameSink : IDbcFrameSink

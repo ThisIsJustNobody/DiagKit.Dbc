@@ -41,7 +41,7 @@ public readonly record struct SignalPath
         ArgumentNullException.ThrowIfNull(text);
         return TryParse(text, out var path)
             ? path
-            : throw new FormatException($"Signal path '{text}' must use the 'Message.Signal' form.");
+            : throw new FormatException($"Signal path '{text}' is invalid; expected 'Message.Signal' form.");
     }
 
     /// <summary>

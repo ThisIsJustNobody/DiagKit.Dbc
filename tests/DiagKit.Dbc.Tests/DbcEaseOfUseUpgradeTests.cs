@@ -164,6 +164,91 @@ public sealed class DbcEaseOfUseUpgradeTests
     }
 
     [TestMethod]
+    public void SignalViewSnapshots_EnumerateAllSignalsForUiBindingAndFiltering()
+    {
+        var runtime = DbcSimpleRuntime.LoadText(
+            """
+            VERSION ""
+            BU_: VCU HOST Gateway LOGGER TP
+
+            BO_ 256 VehicleStatus: 8 VCU
+             SG_ VehicleSpeed : 0|16@1+ (0.01,0) [0|250] "km/h" HOST
+             SG_ Gear : 16|8@1+ (1,0) [0|15] "state" HOST
+            BO_ 300 GatewayStatus: 8 Vector__XXX
+             SG_ GatewayValue : 0|8@1+ (1,0) [0|255] "count" LOGGER
+            BO_ 2364539904 LargePG: 1785 VCU
+             SG_ FirstByte : 0|8@1+ (1,0) [0|255] "byte" TP
+
+            BO_TX_BU_ 300 : Gateway;
+            VAL_ 256 Gear 1 "Drive" 2 "Reverse";
+            """);
+
+        runtime.SetPhysicalValue("VehicleStatus.VehicleSpeed", 42.5, timestamp: Ms(10));
+        runtime.SetPhysicalValue("VehicleStatus.Gear", 2, timestamp: Ms(10));
+
+        var all = runtime.GetSignalViewSnapshots(Ms(11));
+        var vehicle = runtime.GetSignalViewSnapshotsForMessage("VehicleStatus", Ms(11));
+        var gateway = runtime.GetSignalViewSnapshotsTransmittedBy("Gateway", Ms(11));
+        var hostReceived = runtime.Channel.GetSignalViewSnapshotsReceivedBy("HOST", Ms(11));
+        var unsupported = all.Single(x => x.MessageName == "LargePG" && x.SignalName == "FirstByte");
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "VehicleStatus.VehicleSpeed",
+                "VehicleStatus.Gear",
+                "GatewayStatus.GatewayValue",
+                "LargePG.FirstByte",
+            },
+            all.Select(x => $"{x.MessageName}.{x.SignalName}").ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "VehicleSpeed", "Gear" },
+            vehicle.Select(x => x.SignalName).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "GatewayStatus.GatewayValue" },
+            gateway.Select(x => $"{x.MessageName}.{x.SignalName}").ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "VehicleSpeed", "Gear" },
+            hostReceived.Select(x => x.SignalName).ToArray());
+        Assert.AreEqual(42.5, vehicle.Single(x => x.SignalName == "VehicleSpeed").PhysicalValue, 0.000_001);
+        Assert.AreEqual("Reverse", vehicle.Single(x => x.SignalName == "Gear").ValueDescription);
+        Assert.AreEqual(SignalQuality.NoData, unsupported.Quality);
+        Assert.AreEqual(double.NaN, unsupported.PhysicalValue);
+        Assert.AreEqual("byte", unsupported.Unit);
+        Assert.AreEqual(255d, unsupported.Maximum);
+    }
+
+    [TestMethod]
+    public void LookupExceptions_IncludeActionableMessageSignalAndPathContext()
+    {
+        var document = DbcLoader.LoadText(
+            """
+            VERSION ""
+            BU_: VCU HOST
+
+            BO_ 256 VehicleStatus: 8 VCU
+             SG_ Speed : 0|16@1+ (1,0) [0|65535] "" HOST
+            BO_ 257 Track: 8 VCU
+             SG_ CHECKSUM : 0|8@1+ (1,0) [0|255] "" HOST
+             SG_ CHECKSUM : 8|8@1+ (1,0) [0|255] "" HOST
+            """,
+            DbcLoadOptions.Lenient).GetDocumentOrThrow();
+        var simple = DbcSimpleChannel.Create(document);
+
+        var missingMessage = Assert.ThrowsExactly<DbcException>(() => document.ResolveMessage("vehiclestatus"));
+        var missingSignal = Assert.ThrowsExactly<DbcException>(() => document.ResolveSignal("VehicleStatus", "Missing"));
+        var ambiguousSignal = Assert.ThrowsExactly<DbcException>(() => simple.SetPhysicalValue("Track.CHECKSUM", 1));
+        var invalidPath = Assert.ThrowsExactly<FormatException>(() => simple.SetPhysicalValue("VehicleStatus", 1));
+
+        StringAssert.Contains(missingMessage.Message, "case-sensitive");
+        StringAssert.Contains(missingMessage.Message, "Document.Messages");
+        StringAssert.Contains(missingSignal.Message, "VehicleStatus.Missing");
+        StringAssert.Contains(ambiguousSignal.Message, "FindSignals(...)");
+        StringAssert.Contains(ambiguousSignal.Message, "object-based");
+        StringAssert.Contains(invalidPath.Message, "expected 'Message.Signal'");
+    }
+
+    [TestMethod]
     public void DiagnosticFormatter_SummarizesAndFormatsGroupsBySeverityAndCode()
     {
         var diagnostics = new[]

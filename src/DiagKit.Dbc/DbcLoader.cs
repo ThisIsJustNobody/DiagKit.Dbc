@@ -21,6 +21,24 @@ public static partial class DbcLoader
     }
 
     /// <summary>
+    /// 从文件路径同步加载 DBC 文档，加载失败时抛出 DbcException。<br/>
+    /// Synchronously loads a DBC document from a path, throwing DbcException on failure.
+    /// </summary>
+    public static DbcDocument LoadDocument(string path, DbcLoadOptions? options = null)
+    {
+        return LoadDocumentOrThrow(path, options);
+    }
+
+    /// <summary>
+    /// 从文件路径同步加载 DBC 文档，加载失败时抛出 DbcException。<br/>
+    /// Synchronously loads a DBC document from a path, throwing DbcException on failure.
+    /// </summary>
+    public static DbcDocument LoadDocumentOrThrow(string path, DbcLoadOptions? options = null)
+    {
+        return LoadFile(path, options).GetDocumentOrThrow();
+    }
+
+    /// <summary>
     /// 从文件路径异步加载 DBC。<br/>
     /// Asynchronously loads a DBC file from a path.
     /// </summary>
@@ -29,6 +47,31 @@ public static partial class DbcLoader
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var text = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
         return LoadText(text, options);
+    }
+
+    /// <summary>
+    /// 从文件路径异步加载 DBC 文档，加载失败时抛出 DbcException。<br/>
+    /// Asynchronously loads a DBC document from a path, throwing DbcException on failure.
+    /// </summary>
+    public static Task<DbcDocument> LoadDocumentAsync(
+        string path,
+        DbcLoadOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        return LoadDocumentOrThrowAsync(path, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// 从文件路径异步加载 DBC 文档，加载失败时抛出 DbcException。<br/>
+    /// Asynchronously loads a DBC document from a path, throwing DbcException on failure.
+    /// </summary>
+    public static async Task<DbcDocument> LoadDocumentOrThrowAsync(
+        string path,
+        DbcLoadOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await LoadFileAsync(path, options, cancellationToken).ConfigureAwait(false);
+        return result.GetDocumentOrThrow();
     }
 
     /// <summary>
@@ -42,6 +85,24 @@ public static partial class DbcLoader
 
         var parser = new Parser(options);
         return parser.Parse(dbcText);
+    }
+
+    /// <summary>
+    /// 从 DBC 文本加载文档，加载失败时抛出 DbcException。<br/>
+    /// Loads a document from DBC text, throwing DbcException on failure.
+    /// </summary>
+    public static DbcDocument LoadTextDocument(string dbcText, DbcLoadOptions? options = null)
+    {
+        return LoadTextDocumentOrThrow(dbcText, options);
+    }
+
+    /// <summary>
+    /// 从 DBC 文本加载文档，加载失败时抛出 DbcException。<br/>
+    /// Loads a document from DBC text, throwing DbcException on failure.
+    /// </summary>
+    public static DbcDocument LoadTextDocumentOrThrow(string dbcText, DbcLoadOptions? options = null)
+    {
+        return LoadText(dbcText, options).GetDocumentOrThrow();
     }
 
     private sealed class Parser

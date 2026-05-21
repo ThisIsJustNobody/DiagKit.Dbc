@@ -31,6 +31,14 @@ DiagKit.Dbc.slnx             解决方案
 
 核心库不直接依赖 CanHub 或硬件 SDK。接收方向由上层把硬件帧转换为 `DbcFrameView` 后调用处理入口；发送方向由上层通过 `IDbcFrameSink` 消费待发送帧。
 
+## 入口选择
+
+| 场景 | 建议入口 | 说明 |
+| --- | --- | --- |
+| 首次接入、UI、脚本、测试台 | `DbcSimpleRuntime` | 加载 DBC、保留 diagnostics，并提供 `"Message.Signal"` 便捷 API。 |
+| 生产运行时状态机 | `DbcRuntimeSession` / `DbcChannelRuntime` | 使用预解析 handle、snapshot、sink 和周期轮询。 |
+| 底层工具和元数据处理 | `DbcLoader.LoadDocumentOrThrow`、`DbcDocument`、`DbcCodec` | 直接查看 DBC 元数据，或做无状态 encode/decode。 |
+
 API 集成方式见 [API 使用指南](docs/API.zh-CN.md)。
 详见 [CanHub / 外部硬件适配边界](CANHUB-ADAPTER.zh-CN.md)。
 

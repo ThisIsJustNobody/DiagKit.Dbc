@@ -238,4 +238,46 @@ public sealed class DbcSimpleRuntime
     {
         return Channel.GetSignalViewSnapshot(signalPath, now);
     }
+
+    /// <summary>
+    /// 枚举所有 signal 的 UI-friendly 当前值与元数据快照。<br/>
+    /// Enumerates UI-friendly snapshots for all signals.
+    /// </summary>
+    public IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshots(DbcTimestamp now = default)
+    {
+        return Channel.GetSignalViewSnapshots(now);
+    }
+
+    /// <summary>
+    /// 枚举指定 message 下所有 signal 的 UI-friendly 当前值与元数据快照。<br/>
+    /// Enumerates UI-friendly snapshots for all signals in a message.
+    /// </summary>
+    public IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshotsForMessage(
+        string messageName,
+        DbcTimestamp now = default)
+    {
+        return Channel.GetSignalViewSnapshotsForMessage(messageName, now);
+    }
+
+    /// <summary>
+    /// 枚举指定节点发送的所有 message 下 signal 的 UI-friendly 当前值与元数据快照。<br/>
+    /// Enumerates UI-friendly snapshots for signals in messages transmitted by a node.
+    /// </summary>
+    public IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshotsTransmittedBy(
+        string nodeName,
+        DbcTimestamp now = default)
+    {
+        return Channel.GetSignalViewSnapshotsTransmittedBy(nodeName, now);
+    }
+
+    /// <summary>
+    /// 枚举指定节点接收的 signal 的 UI-friendly 当前值与元数据快照。<br/>
+    /// Enumerates UI-friendly snapshots for signals received by a node.
+    /// </summary>
+    public IReadOnlyList<DbcSignalViewSnapshot> GetSignalViewSnapshotsReceivedBy(
+        string nodeName,
+        DbcTimestamp now = default)
+    {
+        return Channel.GetSignalViewSnapshotsReceivedBy(nodeName, now);
+    }
 }
