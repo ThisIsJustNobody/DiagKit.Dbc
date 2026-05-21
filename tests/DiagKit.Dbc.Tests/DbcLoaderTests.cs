@@ -177,6 +177,77 @@ public sealed class DbcLoaderTests
     }
 
     [TestMethod]
+    public void LoadDocumentConvenienceApis_ReturnDocumentsAndFormattedErrors()
+    {
+        const string validDbc = """
+            VERSION ""
+            BU_: VCU HOST
+
+            BO_ 256 VehicleStatus: 8 VCU
+             SG_ Speed : 0|16@1+ (1,0) [0|65535] "" HOST
+            """;
+        const string invalidDbc = """
+            VERSION ""
+            BU_: ECU HOST
+
+            BO_ 999999999999999999999999999999999999999 Status: 8 ECU
+             SG_ State : 0|8@1+ (1,0) [0|255] "" HOST
+            """;
+        var validPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.dbc");
+        var invalidPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.dbc");
+        File.WriteAllText(validPath, validDbc);
+        File.WriteAllText(invalidPath, invalidDbc);
+
+        try
+        {
+            var document = DbcLoader.LoadDocument(validPath);
+            var documentOrThrow = DbcLoader.LoadDocumentOrThrow(validPath);
+            var textDocument = DbcLoader.LoadTextDocument(validDbc);
+            var textDocumentOrThrow = DbcLoader.LoadTextDocumentOrThrow(validDbc);
+            var exception = Assert.ThrowsExactly<DbcException>(() => DbcLoader.LoadDocumentOrThrow(invalidPath));
+
+            Assert.AreEqual("VehicleStatus", document.ResolveMessage("VehicleStatus").Name);
+            Assert.AreEqual("VehicleStatus", documentOrThrow.ResolveMessage("VehicleStatus").Name);
+            Assert.AreEqual("VehicleStatus", textDocument.ResolveMessage("VehicleStatus").Name);
+            Assert.AreEqual("VehicleStatus", textDocumentOrThrow.ResolveMessage("VehicleStatus").Name);
+            StringAssert.Contains(exception.Message, "DBC diagnostics");
+            StringAssert.Contains(exception.Message, "DBC_NUMERIC_PARSE");
+        }
+        finally
+        {
+            File.Delete(validPath);
+            File.Delete(invalidPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task LoadDocumentAsyncConvenienceApis_ReturnDocuments()
+    {
+        const string dbcText = """
+            VERSION ""
+            BU_: VCU HOST
+
+            BO_ 256 VehicleStatus: 8 VCU
+             SG_ Speed : 0|16@1+ (1,0) [0|65535] "" HOST
+            """;
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.dbc");
+        await File.WriteAllTextAsync(path, dbcText);
+
+        try
+        {
+            var document = await DbcLoader.LoadDocumentAsync(path, DbcLoadOptions.Strict, CancellationToken.None);
+            var documentOrThrow = await DbcLoader.LoadDocumentOrThrowAsync(path, DbcLoadOptions.Strict, CancellationToken.None);
+
+            Assert.AreEqual("VehicleStatus", document.ResolveMessage("VehicleStatus").Name);
+            Assert.AreEqual("VehicleStatus", documentOrThrow.ResolveMessage("VehicleStatus").Name);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
     public void LoadText_LoadsNetworkAttributeAndDefaultValue()
     {
         const string dbcText = """
