@@ -219,6 +219,36 @@ public sealed class DbcEaseOfUseUpgradeTests
     }
 
     [TestMethod]
+    public void LookupExceptions_IncludeActionableMessageSignalAndPathContext()
+    {
+        var document = DbcLoader.LoadText(
+            """
+            VERSION ""
+            BU_: VCU HOST
+
+            BO_ 256 VehicleStatus: 8 VCU
+             SG_ Speed : 0|16@1+ (1,0) [0|65535] "" HOST
+            BO_ 257 Track: 8 VCU
+             SG_ CHECKSUM : 0|8@1+ (1,0) [0|255] "" HOST
+             SG_ CHECKSUM : 8|8@1+ (1,0) [0|255] "" HOST
+            """,
+            DbcLoadOptions.Lenient).GetDocumentOrThrow();
+        var simple = DbcSimpleChannel.Create(document);
+
+        var missingMessage = Assert.ThrowsExactly<DbcException>(() => document.ResolveMessage("vehiclestatus"));
+        var missingSignal = Assert.ThrowsExactly<DbcException>(() => document.ResolveSignal("VehicleStatus", "Missing"));
+        var ambiguousSignal = Assert.ThrowsExactly<DbcException>(() => simple.SetPhysicalValue("Track.CHECKSUM", 1));
+        var invalidPath = Assert.ThrowsExactly<FormatException>(() => simple.SetPhysicalValue("VehicleStatus", 1));
+
+        StringAssert.Contains(missingMessage.Message, "case-sensitive");
+        StringAssert.Contains(missingMessage.Message, "Document.Messages");
+        StringAssert.Contains(missingSignal.Message, "VehicleStatus.Missing");
+        StringAssert.Contains(ambiguousSignal.Message, "FindSignals(...)");
+        StringAssert.Contains(ambiguousSignal.Message, "object-based");
+        StringAssert.Contains(invalidPath.Message, "expected 'Message.Signal'");
+    }
+
+    [TestMethod]
     public void DiagnosticFormatter_SummarizesAndFormatsGroupsBySeverityAndCode()
     {
         var diagnostics = new[]

@@ -300,12 +300,13 @@ public sealed class DbcSimpleChannel
         var matches = message.FindSignals(signalPath.SignalName);
         if (matches.Count == 0)
         {
-            throw new DbcException($"Signal '{signalPath.SignalName}' was not found in message '{signalPath.MessageName}'.");
+            throw new DbcException(
+                $"Signal '{signalPath}' was not found. DBC name lookup is case-sensitive; check message '{signalPath.MessageName}' Signals for available signal names.");
         }
 
         if (matches.Count > 1)
         {
-            throw new DbcException($"Signal '{signalPath.SignalName}' is ambiguous in message '{signalPath.MessageName}'.");
+            throw new DbcException($"Signal '{signalPath}' is ambiguous. Use FindSignals(...) or object-based runtime handle resolution.");
         }
 
         var messageHandle = channel.ResolveMessage(signalPath.MessageName);
