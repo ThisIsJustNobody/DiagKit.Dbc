@@ -16,6 +16,7 @@
 - 不需要运行时状态时，可用 `DbcLoader.LoadDocumentOrThrow(...)` 直接获取不可变文档。
 - 可通过 `DbcSimpleRuntime` / `DbcSimpleChannel` 批量枚举 `DbcSignalViewSnapshot`，方便 UI 绑定。
 - 建模 Node、Message、Signal、环境变量、关系属性元数据、属性、值表、复用信号、CAN identifier、CAN FD flags 和来源行号。
+- 兼容 Vector `SystemNodeLongSymbol`、`SystemMessageLongSymbol`、`SystemSignalLongSymbol` 和 `SystemEnvVarLongSymbol`，默认展示完整名称，同时保留短名别名查找。
 - 编解码 Intel/Motorola 信号、 signed 值、浮点信号、raw 值和 physical 值。
 - 使用显式写入策略处理范围问题，避免静默修正关键语义。
 - 将接收帧处理为当前状态 snapshot 和流式 `SignalSample`，供实时波形、历史回放和分析层消费。

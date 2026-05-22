@@ -22,7 +22,8 @@ DiagKit.Dbc.slnx             解决方案
 
 - 支持 `Strict` / `Lenient` 的 DBC loader 和结构化 diagnostics。
 - 提供 diagnostics 格式化/分组、`Errors` / `Warnings` 分类、`SignalPath`、`DbcSimpleRuntime` / `DbcSimpleChannel` 非热路径易用入口。
-- Node、Message、Signal、值表、属性、复用信号和来源行号元数据。
+- Node、Message、Signal、环境变量、值表、属性、复用信号和来源行号元数据。
+- 兼容 Vector `System*LongSymbol`，`Name` 默认使用完整名称，`SourceName` / `NameAliases` 保留 DBC 结构行短名。
 - CAN/CAN FD identifier、DLC、flags 和 timestamp 模型。
 - Intel/Motorola 信号 codec、raw/physical 转换和显式写入策略。
 - 面向接收处理、当前状态 snapshot 和信号样本流的 runtime session/channel。

@@ -1,15 +1,21 @@
 # 变更日志
 
-本文件记录项目的重要变更。包版本由 Git tag 通过 MinVer 自动生成；当前预览版本为 `1.0.0-preview`。
+本文件记录项目的重要变更。包版本由 Git tag 通过 MinVer 自动生成；当前预览版本为 `1.1.0-preview.2`。
 
-## 1.0.0-preview.1 - Unreleased
+## 1.1.0-preview.2 - 2026-05-22
 
 ### 易用性升级
 
 - `DbcLoader` 新增 `LoadDocument*` / `LoadTextDocument*` 便捷入口，减少只需要不可变文档时的加载样板。
 - `DbcSimpleRuntime` / `DbcSimpleChannel` 新增批量 `DbcSignalViewSnapshot` API，方便 UI 按全部信号、message、发送节点或接收节点绑定。
 - 常见 message/signal/path 解析异常补充大小写敏感、可用集合和歧义处理提示。
+- 兼容 Vector `SystemNodeLongSymbol`、`SystemMessageLongSymbol`、`SystemSignalLongSymbol`、`SystemEnvVarLongSymbol`：对象 `Name` 默认恢复完整名，DBC 短名保存在 `SourceName` / `NameAliases`，解析完整名或短名均可命中，冲突时失败关闭。
+- 环境变量新增 `Attributes`，并正确应用 `BA_ ... EV_ ...` 属性赋值。
 - README 和中文 API 指南明确三层入口：简单使用、生产运行时状态机、底层工具。
+
+### 测试与发布
+
+- 修复 `MSTest.TestAdapter` / `MSTest.TestFramework` 版本不一致导致 `dotnet test` 不发现测试的问题；Release 测试恢复为真实执行 172 个测试。
 
 ## 1.0.0-preview - 2026-05-21
 

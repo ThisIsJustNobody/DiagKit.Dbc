@@ -9,9 +9,10 @@ namespace DiagKit.Dbc;
 public sealed class DbcDocument
 {
     private static int nextRuntimeToken;
-    private readonly Dictionary<string, DbcNode> nodesByName;
-    private readonly Dictionary<string, DbcMessage> messagesByName;
+    private readonly Dictionary<string, DbcNode[]> nodesByName;
+    private readonly Dictionary<string, DbcMessage[]> messagesByName;
     private readonly Dictionary<CanIdentifier, DbcMessage> messagesByIdentifier;
+    private readonly Dictionary<string, DbcEnvironmentVariable[]> environmentVariablesByName;
 
     /// <summary>
     /// 创建 DBC 文档实例。<br/>
@@ -37,9 +38,9 @@ public sealed class DbcDocument
             ? new ReadOnlyDictionary<string, DbcAttributeValue>(new Dictionary<string, DbcAttributeValue>(StringComparer.Ordinal))
             : new ReadOnlyDictionary<string, DbcAttributeValue>(new Dictionary<string, DbcAttributeValue>(attributes, StringComparer.Ordinal));
         Comment = comment;
-        EnvironmentVariables = environmentVariables is null
-            ? new ReadOnlyDictionary<string, DbcEnvironmentVariable>(new Dictionary<string, DbcEnvironmentVariable>(StringComparer.Ordinal))
-            : new ReadOnlyDictionary<string, DbcEnvironmentVariable>(new Dictionary<string, DbcEnvironmentVariable>(environmentVariables, StringComparer.Ordinal));
+        var environmentVariableArray = environmentVariables?.Values.ToArray() ?? [];
+        EnvironmentVariables = new ReadOnlyDictionary<string, DbcEnvironmentVariable>(
+            CreateUniqueNameDictionary(environmentVariableArray, variable => variable.Name));
         RelationAttributeDefinitions = relationAttributeDefinitions is null
             ? new ReadOnlyDictionary<string, DbcRelationAttributeDefinition>(new Dictionary<string, DbcRelationAttributeDefinition>(StringComparer.Ordinal))
             : new ReadOnlyDictionary<string, DbcRelationAttributeDefinition>(new Dictionary<string, DbcRelationAttributeDefinition>(relationAttributeDefinitions, StringComparer.Ordinal));
@@ -49,29 +50,22 @@ public sealed class DbcDocument
         RelationAttributes = Array.AsReadOnly(relationAttributes?.ToArray() ?? []);
         RuntimeToken = Interlocked.Increment(ref nextRuntimeToken);
 
-        nodesByName = new Dictionary<string, DbcNode>(Nodes.Count, StringComparer.Ordinal);
-        foreach (var node in Nodes)
-        {
-            if (!nodesByName.TryAdd(node.Name, node))
-            {
-                throw new InvalidOperationException($"Duplicate node name '{node.Name}'.");
-            }
-        }
+        nodesByName = DbcNameLookup.BuildLookup(Nodes, node => node.Name, node => node.NameAliases);
 
-        messagesByName = new Dictionary<string, DbcMessage>(Messages.Count, StringComparer.Ordinal);
+        messagesByName = DbcNameLookup.BuildLookup(Messages, message => message.Name, message => message.NameAliases);
         messagesByIdentifier = new Dictionary<CanIdentifier, DbcMessage>(Messages.Count);
         foreach (var message in Messages)
         {
-            if (!messagesByName.TryAdd(message.Name, message))
-            {
-                throw new InvalidOperationException($"Duplicate message name '{message.Name}'.");
-            }
-
             if (!messagesByIdentifier.TryAdd(message.Identifier, message))
             {
                 throw new InvalidOperationException($"Duplicate CAN identifier '{message.Identifier}'.");
             }
         }
+
+        environmentVariablesByName = DbcNameLookup.BuildLookup(
+            environmentVariableArray,
+            variable => variable.Name,
+            variable => variable.NameAliases);
     }
 
     /// <summary>
@@ -132,7 +126,15 @@ public sealed class DbcDocument
     public bool TryResolveNode(string nodeName, out DbcNode node)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeName);
-        return nodesByName.TryGetValue(nodeName, out node!);
+        if (nodesByName.TryGetValue(nodeName, out var matches) &&
+            matches.Length == 1)
+        {
+            node = matches[0];
+            return true;
+        }
+
+        node = null!;
+        return false;
     }
 
     /// <summary>
@@ -141,9 +143,15 @@ public sealed class DbcDocument
     /// </summary>
     public DbcNode ResolveNode(string nodeName)
     {
-        return TryResolveNode(nodeName, out var node)
-            ? node
-            : throw new DbcException($"Node '{nodeName}' was not found.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeName);
+        if (!nodesByName.TryGetValue(nodeName, out var matches))
+        {
+            throw new DbcException($"Node '{nodeName}' was not found.");
+        }
+
+        return matches.Length == 1
+            ? matches[0]
+            : throw new DbcException($"Node '{nodeName}' is ambiguous. Use FindNodes(...) to enumerate candidates.");
     }
 
     /// <summary>
@@ -153,7 +161,15 @@ public sealed class DbcDocument
     public bool TryResolveMessage(string messageName, out DbcMessage message)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageName);
-        return messagesByName.TryGetValue(messageName, out message!);
+        if (messagesByName.TryGetValue(messageName, out var matches) &&
+            matches.Length == 1)
+        {
+            message = matches[0];
+            return true;
+        }
+
+        message = null!;
+        return false;
     }
 
     /// <summary>
@@ -171,9 +187,15 @@ public sealed class DbcDocument
     /// </summary>
     public DbcMessage ResolveMessage(string messageName)
     {
-        return TryResolveMessage(messageName, out var message)
-            ? message
-            : throw CreateMessageNotFoundException(messageName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageName);
+        if (!messagesByName.TryGetValue(messageName, out var matches))
+        {
+            throw CreateMessageNotFoundException(messageName);
+        }
+
+        return matches.Length == 1
+            ? matches[0]
+            : throw new DbcException($"Message '{messageName}' is ambiguous. Use FindMessages(...) to enumerate candidates.");
     }
 
     /// <summary>
@@ -185,6 +207,42 @@ public sealed class DbcDocument
         return TryResolveMessage(identifier, out var message)
             ? message
             : throw new DbcException($"Message '{identifier}' was not found. Check Document.Messages for available CAN identifiers.");
+    }
+
+    /// <summary>
+    /// 按环境变量名查找环境变量，名称匹配使用 ordinal 大小写敏感规则。<br/>
+    /// Resolves an environment variable by name using ordinal case-sensitive matching.
+    /// </summary>
+    public bool TryResolveEnvironmentVariable(string variableName, out DbcEnvironmentVariable variable)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(variableName);
+        if (environmentVariablesByName.TryGetValue(variableName, out var matches) &&
+            matches.Length == 1)
+        {
+            variable = matches[0];
+            return true;
+        }
+
+        variable = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// 按环境变量名查找环境变量，找不到或歧义时抛出 DbcException。<br/>
+    /// Resolves an environment variable by name, throwing DbcException when missing or ambiguous.
+    /// </summary>
+    public DbcEnvironmentVariable ResolveEnvironmentVariable(string variableName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(variableName);
+        if (!environmentVariablesByName.TryGetValue(variableName, out var matches))
+        {
+            throw new DbcException(
+                $"Environment variable '{variableName}' was not found. DBC name lookup is case-sensitive; check Document.EnvironmentVariables for available environment variable names.");
+        }
+
+        return matches.Length == 1
+            ? matches[0]
+            : throw new DbcException($"Environment variable '{variableName}' is ambiguous. Use FindEnvironmentVariables(...) to enumerate candidates.");
     }
 
     /// <summary>
@@ -219,9 +277,7 @@ public sealed class DbcDocument
     /// </summary>
     public DbcSignal ResolveSignal(string messageName, string signalName)
     {
-        return TryResolveMessage(messageName, out var message)
-            ? message.ResolveSignal(signalName)
-            : throw CreateMessageNotFoundException(messageName);
+        return ResolveMessage(messageName).ResolveSignal(signalName);
     }
 
     /// <summary>
@@ -245,7 +301,7 @@ public sealed class DbcDocument
         {
             foreach (var transmitter in message.Transmitters)
             {
-                if (string.Equals(transmitter.Name, nodeName, StringComparison.Ordinal))
+                if (DbcNameLookup.Matches(transmitter.Name, transmitter.NameAliases, nodeName))
                 {
                     yield return message;
                     break;
@@ -299,13 +355,61 @@ public sealed class DbcDocument
     {
         foreach (var node in nodes)
         {
-            if (string.Equals(node.Name, nodeName, StringComparison.Ordinal))
+            if (DbcNameLookup.Matches(node.Name, node.NameAliases, nodeName))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 按节点名或别名查找所有匹配节点。<br/>
+    /// Finds all nodes matching a node name or alias.
+    /// </summary>
+    public IReadOnlyList<DbcNode> FindNodes(string nodeName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeName);
+        return nodesByName.TryGetValue(nodeName, out var matches)
+            ? Array.AsReadOnly(matches.ToArray())
+            : Array.AsReadOnly(Array.Empty<DbcNode>());
+    }
+
+    /// <summary>
+    /// 按消息名或别名查找所有匹配消息。<br/>
+    /// Finds all messages matching a message name or alias.
+    /// </summary>
+    public IReadOnlyList<DbcMessage> FindMessages(string messageName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageName);
+        return messagesByName.TryGetValue(messageName, out var matches)
+            ? Array.AsReadOnly(matches.ToArray())
+            : Array.AsReadOnly(Array.Empty<DbcMessage>());
+    }
+
+    /// <summary>
+    /// 按环境变量名或别名查找所有匹配环境变量。<br/>
+    /// Finds all environment variables matching an environment-variable name or alias.
+    /// </summary>
+    public IReadOnlyList<DbcEnvironmentVariable> FindEnvironmentVariables(string variableName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(variableName);
+        return environmentVariablesByName.TryGetValue(variableName, out var matches)
+            ? Array.AsReadOnly(matches.ToArray())
+            : Array.AsReadOnly(Array.Empty<DbcEnvironmentVariable>());
+    }
+
+    private static Dictionary<string, T> CreateUniqueNameDictionary<T>(IEnumerable<T> items, Func<T, string> getName)
+        where T : class
+    {
+        var result = new Dictionary<string, T>(StringComparer.Ordinal);
+        foreach (var item in items)
+        {
+            result.TryAdd(getName(item), item);
+        }
+
+        return result;
     }
 
     private static DbcException CreateMessageNotFoundException(string messageName)

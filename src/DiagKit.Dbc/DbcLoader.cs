@@ -755,6 +755,7 @@ public static partial class DbcLoader
                 match.Groups["id"].Value,
                 match.Groups["signal"].Value,
                 match.Groups["node"].Value,
+                match.Groups["env"].Value,
                 lineNumber);
         }
 
@@ -803,6 +804,17 @@ public static partial class DbcLoader
             else if (string.Equals(owner, "BU_", StringComparison.Ordinal))
             {
                 GetOrAddNode(pending.NodeName).Attributes[pending.AttributeName] = value;
+            }
+            else if (string.Equals(owner, "EV_", StringComparison.Ordinal))
+            {
+                if (environmentVariables.TryGetValue(pending.EnvName, out var environmentVariable))
+                {
+                    environmentVariable.Attributes[pending.AttributeName] = value;
+                }
+                else
+                {
+                    AddError("DBC_ATTRIBUTE_TARGET_MISSING", $"Attribute '{pending.AttributeName}' refers to missing environment variable '{pending.EnvName}'.", pending.SourceLine);
+                }
             }
         }
 
@@ -975,15 +987,19 @@ public static partial class DbcLoader
             var nodeMap = new Dictionary<string, DbcNode>(StringComparer.Ordinal);
             foreach (var node in nodes.Values)
             {
+                var nameParts = ResolveVectorLongName(node.Name, node.Attributes, "SystemNodeLongSymbol");
                 nodeMap[node.Name] = new DbcNode(
-                    node.Name,
+                    nameParts.Name,
                     node.Comment,
-                    new Dictionary<string, DbcAttributeValue>(node.Attributes, StringComparer.Ordinal));
+                    new Dictionary<string, DbcAttributeValue>(node.Attributes, StringComparer.Ordinal),
+                    nameParts.SourceName,
+                    nameParts.NameAliases);
             }
 
             var builtEnvironmentVariables = new Dictionary<string, DbcEnvironmentVariable>(environmentVariables.Count, StringComparer.Ordinal);
             foreach (var sourceVariable in environmentVariables.Values)
             {
+                var nameParts = ResolveVectorLongName(sourceVariable.Name, sourceVariable.Attributes, "SystemEnvVarLongSymbol");
                 var accessNodes = new List<DbcNode>(sourceVariable.AccessNodes.Length);
                 foreach (var nodeName in sourceVariable.AccessNodes)
                 {
@@ -991,7 +1007,7 @@ public static partial class DbcLoader
                 }
 
                 builtEnvironmentVariables.Add(sourceVariable.Name, new DbcEnvironmentVariable(
-                    sourceVariable.Name,
+                    nameParts.Name,
                     sourceVariable.ValueType,
                     sourceVariable.Minimum,
                     sourceVariable.Maximum,
@@ -1000,7 +1016,10 @@ public static partial class DbcLoader
                     sourceVariable.Identifier,
                     sourceVariable.AccessType,
                     accessNodes,
-                    sourceVariable.SourceLine));
+                    sourceVariable.SourceLine,
+                    new Dictionary<string, DbcAttributeValue>(sourceVariable.Attributes, StringComparer.Ordinal),
+                    nameParts.SourceName,
+                    nameParts.NameAliases));
             }
 
             var builtMessages = new List<DbcMessage>(messages.Count);
@@ -1010,6 +1029,7 @@ public static partial class DbcLoader
                 var builtSignals = new List<DbcSignal>(sourceMessage.Signals.Count);
                 foreach (var sourceSignal in sourceMessage.Signals)
                 {
+                    var nameParts = ResolveVectorLongName(sourceSignal.Name, sourceSignal.Attributes, "SystemSignalLongSymbol");
                     var receivers = new List<DbcNode>(sourceSignal.Receivers.Length);
                     foreach (var receiver in sourceSignal.Receivers)
                     {
@@ -1058,7 +1078,7 @@ public static partial class DbcLoader
                     }
 
                     builtSignals.Add(new DbcSignal(
-                        sourceSignal.Name,
+                        nameParts.Name,
                         sourceSignal.StartBit,
                         sourceSignal.BitLength,
                         sourceSignal.ByteOrder,
@@ -1076,21 +1096,25 @@ public static partial class DbcLoader
                         sourceSignal.InitialValue,
                         sourceSignal.SourceLine,
                         sourceSignal.SendType ?? GetDefaultSendType("GenSigSendType"),
-                        sourceSignal.TimeoutTimeMs ?? GetDefaultInt32("GenSigTimeoutTime")));
+                        sourceSignal.TimeoutTimeMs ?? GetDefaultInt32("GenSigTimeoutTime"),
+                        nameParts.SourceName,
+                        nameParts.NameAliases));
                 }
 
+                var messageNameParts = ResolveVectorLongName(sourceMessage.Name, sourceMessage.Attributes, "SystemMessageLongSymbol");
                 var transmitterNodes = new List<DbcNode>(sourceMessage.Transmitters.Count);
                 foreach (var transmitter in sourceMessage.Transmitters)
                 {
-                    if (!transmitterNodes.Any(x => string.Equals(x.Name, transmitter, StringComparison.Ordinal)))
+                    var transmitterNode = nodeMap[transmitter];
+                    if (!transmitterNodes.Contains(transmitterNode))
                     {
-                        transmitterNodes.Add(nodeMap[transmitter]);
+                        transmitterNodes.Add(transmitterNode);
                     }
                 }
 
                 builtMessages.Add(new DbcMessage(
                     new DbcRawMessageId(sourceMessage.RawId),
-                    sourceMessage.Name,
+                    messageNameParts.Name,
                     sourceMessage.DataLength,
                     nodeMap[sourceMessage.Transmitter],
                     builtSignals,
@@ -1101,8 +1125,27 @@ public static partial class DbcLoader
                     sourceMessage.FrameFlags,
                     sourceMessage.SourceLine,
                     sourceMessage.SendType ?? GetDefaultSendType("GenMsgSendType"),
-                    sourceMessage.TimeoutTimeMs ?? GetDefaultInt32("GenMsgTimeoutTime")));
+                    sourceMessage.TimeoutTimeMs ?? GetDefaultInt32("GenMsgTimeoutTime"),
+                    messageNameParts.SourceName,
+                    messageNameParts.NameAliases));
             }
+
+            ReportAmbiguousLookupNames("node", nodeMap.Values, node => node.Name, node => node.NameAliases);
+            ReportAmbiguousLookupNames("message", builtMessages, message => message.Name, message => message.NameAliases);
+            foreach (var message in builtMessages)
+            {
+                ReportAmbiguousLookupNames(
+                    $"signal in message '{message.Name}'",
+                    message.Signals,
+                    signal => signal.Name,
+                    signal => signal.NameAliases);
+            }
+
+            ReportAmbiguousLookupNames(
+                "environment variable",
+                builtEnvironmentVariables.Values,
+                variable => variable.Name,
+                variable => variable.NameAliases);
 
             return new DbcDocument(
                 nodeMap.Values.OrderBy(x => x.Name, StringComparer.Ordinal).ToArray(),
@@ -1114,6 +1157,59 @@ public static partial class DbcLoader
                 new Dictionary<string, DbcRelationAttributeDefinition>(relationAttributeDefinitions, StringComparer.Ordinal),
                 new Dictionary<string, DbcRelationAttributeDefault>(relationAttributeDefaults, StringComparer.Ordinal),
                 relationAttributes.ToArray());
+        }
+
+        private static NameParts ResolveVectorLongName(
+            string sourceName,
+            IReadOnlyDictionary<string, DbcAttributeValue> attributes,
+            string longSymbolAttributeName)
+        {
+            if (attributes.TryGetValue(longSymbolAttributeName, out var attribute) &&
+                attribute.Value is string longName &&
+                !string.IsNullOrWhiteSpace(longName) &&
+                !string.Equals(longName, sourceName, StringComparison.Ordinal))
+            {
+                return new NameParts(longName, sourceName, [sourceName]);
+            }
+
+            return new NameParts(sourceName, sourceName, []);
+        }
+
+        private void ReportAmbiguousLookupNames<T>(
+            string objectKind,
+            IEnumerable<T> items,
+            Func<T, string> getName,
+            Func<T, IReadOnlyList<string>> getAliases)
+            where T : class
+        {
+            var lookup = new Dictionary<string, List<T>>(StringComparer.Ordinal);
+            foreach (var item in items)
+            {
+                foreach (var lookupName in DbcNameLookup.EnumerateLookupNames(getName(item), getAliases(item)))
+                {
+                    if (!lookup.TryGetValue(lookupName, out var matches))
+                    {
+                        matches = [];
+                        lookup.Add(lookupName, matches);
+                    }
+
+                    if (!matches.Contains(item))
+                    {
+                        matches.Add(item);
+                    }
+                }
+            }
+
+            foreach (var (lookupName, matches) in lookup)
+            {
+                if (matches.Count > 1)
+                {
+                    AddRecoverableDiagnostic(
+                        "DBC_NAME_ALIAS_AMBIGUOUS",
+                        $"Name '{lookupName}' resolves to multiple {objectKind} objects; name-based lookup for this name will fail closed.",
+                        0);
+                }
+            }
         }
 
         private void ApplyExtendedMultiplexingDefinitions()
@@ -1686,6 +1782,8 @@ public static partial class DbcLoader
         public string[] AccessNodes { get; } = accessNodes;
 
         public int SourceLine { get; } = sourceLine;
+
+        public Dictionary<string, DbcAttributeValue> Attributes { get; } = new(StringComparer.Ordinal);
     }
 
     private sealed record SignalCommentBuilder(string Text, int SourceLine);
@@ -1693,6 +1791,8 @@ public static partial class DbcLoader
     private sealed record SignalValueDescriptionBuilder(IReadOnlyDictionary<long, string> Values, int SourceLine);
 
     private sealed record SignalValueTypeBuilder(DbcSignalValueType ValueType, int SourceLine);
+
+    private sealed record NameParts(string Name, string SourceName, IReadOnlyList<string> NameAliases);
 
     private sealed record PendingAttributeDefault(string AttributeName, string RawValue, int SourceLine);
 
@@ -1703,6 +1803,7 @@ public static partial class DbcLoader
         string RawId,
         string SignalName,
         string NodeName,
+        string EnvName,
         int SourceLine);
 
     private sealed class SignalBuilder(

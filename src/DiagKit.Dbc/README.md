@@ -16,6 +16,7 @@
 - Load immutable documents directly with `DbcLoader.LoadDocumentOrThrow(...)` when runtime state is not needed.
 - Enumerate `DbcSignalViewSnapshot` values for UI binding through `DbcSimpleRuntime` / `DbcSimpleChannel`.
 - Model nodes, messages, signals, environment variables, relation-attribute metadata, attributes, value tables, multiplexing, CAN identifiers, CAN FD flags, and source lines.
+- Restore Vector `SystemNodeLongSymbol`, `SystemMessageLongSymbol`, `SystemSignalLongSymbol`, and `SystemEnvVarLongSymbol` as canonical names while keeping short-name aliases resolvable.
 - Encode and decode Intel/Motorola signals, signed values, floating-point signals, raw values, and physical values.
 - Use explicit write policies for range handling instead of silent correction.
 - Process received frames into current snapshots and streaming `SignalSample` output for real-time or historical data consumers.

@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace DiagKit.Dbc;
 
 /// <summary>
@@ -20,11 +22,16 @@ public sealed class DbcEnvironmentVariable
         int identifier,
         string accessType,
         IReadOnlyList<DbcNode>? accessNodes = null,
-        int sourceLine = 0)
+        int sourceLine = 0,
+        IReadOnlyDictionary<string, DbcAttributeValue>? attributes = null,
+        string? sourceName = null,
+        IReadOnlyList<string>? nameAliases = null)
     {
         Name = string.IsNullOrWhiteSpace(name)
             ? throw new ArgumentException("Environment variable name cannot be empty.", nameof(name))
             : name;
+        SourceName = string.IsNullOrWhiteSpace(sourceName) ? Name : sourceName;
+        NameAliases = DbcNameLookup.CreateAliases(Name, SourceName, nameAliases);
         ValueType = valueType;
         Minimum = minimum;
         Maximum = maximum;
@@ -34,12 +41,27 @@ public sealed class DbcEnvironmentVariable
         AccessType = accessType ?? throw new ArgumentNullException(nameof(accessType));
         AccessNodes = Array.AsReadOnly(accessNodes?.ToArray() ?? []);
         SourceLine = sourceLine;
+        Attributes = attributes is null
+            ? new ReadOnlyDictionary<string, DbcAttributeValue>(new Dictionary<string, DbcAttributeValue>(StringComparer.Ordinal))
+            : new ReadOnlyDictionary<string, DbcAttributeValue>(new Dictionary<string, DbcAttributeValue>(attributes, StringComparer.Ordinal));
     }
 
     /// <summary>
     /// 环境变量名称 / Environment variable name.
     /// </summary>
     public string Name { get; }
+
+    /// <summary>
+    /// DBC 源文件 EV_ 行中的原始环境变量名，可能是 Vector 32 字符截断名。<br/>
+    /// Original environment-variable name from the DBC EV_ statement, possibly a Vector 32-character truncated name.
+    /// </summary>
+    public string SourceName { get; }
+
+    /// <summary>
+    /// 可用于查找此环境变量的额外名称。<br/>
+    /// Additional names that can resolve this environment variable.
+    /// </summary>
+    public IReadOnlyList<string> NameAliases { get; }
 
     /// <summary>
     /// EV_ 行中的值类型编码 / Value type code from the EV_ line.
@@ -85,4 +107,9 @@ public sealed class DbcEnvironmentVariable
     /// EV_ 语句所在行号 / Source line of the EV_ statement.
     /// </summary>
     public int SourceLine { get; }
+
+    /// <summary>
+    /// 环境变量级属性 / Environment-variable-level attributes.
+    /// </summary>
+    public IReadOnlyDictionary<string, DbcAttributeValue> Attributes { get; }
 }
