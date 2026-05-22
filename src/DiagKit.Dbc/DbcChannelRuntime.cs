@@ -9,7 +9,7 @@ public sealed class DbcChannelRuntime
     private static int nextChannelToken;
 
     private readonly DbcMessage[] messages;
-    private readonly Dictionary<string, int> messageIndexesByName;
+    private readonly Dictionary<string, int[]> messageIndexesByName;
     private readonly Dictionary<CanIdentifier, int> messageIndexesByIdentifier;
     private readonly MessageRuntimeState[] states;
     private readonly bool[] observingMessages;
@@ -25,7 +25,7 @@ public sealed class DbcChannelRuntime
         channelToken = System.Threading.Interlocked.Increment(ref nextChannelToken);
 
         messages = new DbcMessage[session.Document.Messages.Count];
-        messageIndexesByName = new Dictionary<string, int>(messages.Length, StringComparer.Ordinal);
+        var messageIndexListsByName = new Dictionary<string, List<int>>(messages.Length, StringComparer.Ordinal);
         messageIndexesByIdentifier = new Dictionary<CanIdentifier, int>(messages.Length);
         states = new MessageRuntimeState[messages.Length];
         observingMessages = new bool[messages.Length];
@@ -34,12 +34,27 @@ public sealed class DbcChannelRuntime
         {
             var message = session.Document.Messages[i];
             messages[i] = message;
-            messageIndexesByName.Add(message.Name, i);
+            foreach (var lookupName in DbcNameLookup.EnumerateLookupNames(message.Name, message.NameAliases))
+            {
+                if (!messageIndexListsByName.TryGetValue(lookupName, out var indexes))
+                {
+                    indexes = [];
+                    messageIndexListsByName.Add(lookupName, indexes);
+                }
+
+                indexes.Add(i);
+            }
+
             messageIndexesByIdentifier.Add(message.Identifier, i);
             var runtimeDataLength = message.SupportsSingleFrameRuntime ? message.DataLength : 0;
             states[i] = new MessageRuntimeState(runtimeDataLength);
             maxDataLength = Math.Max(maxDataLength, runtimeDataLength);
         }
+
+        messageIndexesByName = messageIndexListsByName.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.ToArray(),
+            StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -59,10 +74,11 @@ public sealed class DbcChannelRuntime
     public bool TryResolveMessage(string messageName, out MessageHandle handle)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageName);
-        if (messageIndexesByName.TryGetValue(messageName, out var index) &&
-            messages[index].SupportsSingleFrameRuntime)
+        if (messageIndexesByName.TryGetValue(messageName, out var indexes) &&
+            indexes.Length == 1 &&
+            messages[indexes[0]].SupportsSingleFrameRuntime)
         {
-            handle = new MessageHandle(index, Session.Document.RuntimeToken, channelToken);
+            handle = new MessageHandle(indexes[0], Session.Document.RuntimeToken, channelToken);
             return true;
         }
 
@@ -94,10 +110,17 @@ public sealed class DbcChannelRuntime
     public MessageHandle ResolveMessage(string messageName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageName);
-        if (messageIndexesByName.TryGetValue(messageName, out var index) &&
-            !messages[index].SupportsSingleFrameRuntime)
+        if (messageIndexesByName.TryGetValue(messageName, out var indexes))
         {
-            throw CreateRuntimeUnsupportedMessageException(messages[index]);
+            if (indexes.Length > 1)
+            {
+                throw new DbcException($"Message '{messageName}' is ambiguous in channel '{Name}'. Use Document.FindMessages(...) to enumerate candidates.");
+            }
+
+            if (!messages[indexes[0]].SupportsSingleFrameRuntime)
+            {
+                throw CreateRuntimeUnsupportedMessageException(messages[indexes[0]]);
+            }
         }
 
         return TryResolveMessage(messageName, out var handle)
@@ -133,7 +156,7 @@ public sealed class DbcChannelRuntime
         var matchIndex = -1;
         for (var i = 0; i < message.Signals.Count; i++)
         {
-            if (string.Equals(message.Signals[i].Name, signalName, StringComparison.Ordinal))
+            if (DbcNameLookup.Matches(message.Signals[i].Name, message.Signals[i].NameAliases, signalName))
             {
                 if (matchIndex >= 0)
                 {
@@ -166,7 +189,7 @@ public sealed class DbcChannelRuntime
         var matchIndex = -1;
         for (var i = 0; i < message.Signals.Count; i++)
         {
-            if (!string.Equals(message.Signals[i].Name, signalName, StringComparison.Ordinal))
+            if (!DbcNameLookup.Matches(message.Signals[i].Name, message.Signals[i].NameAliases, signalName))
             {
                 continue;
             }
@@ -911,7 +934,8 @@ public sealed class DbcChannelRuntime
     {
         for (var i = 0; i < message.Transmitters.Count; i++)
         {
-            if (string.Equals(message.Transmitters[i].Name, nodeName, StringComparison.Ordinal))
+            var transmitter = message.Transmitters[i];
+            if (DbcNameLookup.Matches(transmitter.Name, transmitter.NameAliases, nodeName))
             {
                 return true;
             }

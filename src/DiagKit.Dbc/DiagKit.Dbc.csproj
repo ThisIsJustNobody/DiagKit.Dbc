@@ -35,7 +35,7 @@
     <PackageIcon>diagkit-dbc.png</PackageIcon>
 
     <!-- Release -->
-    <PackageReleaseNotes>Preview 1 usability update: direct document loading helpers, bulk UI-friendly signal view snapshots, clearer lookup diagnostics, and documented API entry layers.</PackageReleaseNotes>
+    <PackageReleaseNotes>Preview 2 compatibility update: Vector long-symbol canonical names with short-name aliases, environment-variable attributes, alias-aware lookup diagnostics, restored MSTest discovery, and documented API entry layers.</PackageReleaseNotes>
 
     <!-- URL -->
     <PackageProjectUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc</PackageProjectUrl>

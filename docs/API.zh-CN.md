@@ -60,7 +60,7 @@ channel.PollDueFrames(now, txSink);
 - `Messages`: DBC message。Message 记录 transmitter、payload 长度、CAN identifier、CAN FD flags、cycle time、send type、timeout 等。`SupportsSingleFrameRuntime` 表示该 message 是否可由当前 CAN/CAN FD 单帧 runtime 直接处理。
 - `Signals`: Message 持有 signal。Signal 记录 start bit、length、byte order、factor/offset、unit、receivers、multiplexing、timeout 等。
 - `Attributes`: DBC 属性定义、默认值和对象赋值会尽量保留，并把常见属性映射为语义字段。
-- `EnvironmentVariables`: `EV_` 环境变量元数据。它不会被当作 CAN frame signal 参与编解码。
+- `EnvironmentVariables`: `EV_` 环境变量元数据。它不会被当作 CAN frame signal 参与编解码；`BA_ ... EV_ ...` 属性会保存在环境变量的 `Attributes` 中。
 - `RelationAttributeDefinitions` / `RelationAttributeDefaults` / `RelationAttributes`: `BA_DEF_REL_`、`BA_DEF_DEF_REL_`、`BA_REL_` 的可追溯原始元数据。首版不会猜测复杂关系目标并应用到 message/signal。
 
 只需要 DBC 元数据、暂时不需要 runtime 状态时，可以直接加载文档：
@@ -95,6 +95,12 @@ var sameHandle = channel.ResolveSignal(SignalPath.Parse("VehicleStatus.VehicleSp
 如果不想用异常表达缺失对象，可使用 `TryResolveMessage` 和 `TryResolveSignal`。
 
 名称查找默认使用 ordinal 大小写敏感规则。
+
+Vector CANdb++ 可能把超过传统 DBC 名称长度限制的对象名写入 `SystemNodeLongSymbol`、`SystemMessageLongSymbol`、`SystemSignalLongSymbol`、`SystemEnvVarLongSymbol` 属性。加载后，`DbcNode`、`DbcMessage`、`DbcSignal`、`DbcEnvironmentVariable` 的 `Name` 会优先使用完整 long symbol；DBC 结构行中的短名或截断名保存在 `SourceName`；`NameAliases` 保存额外可查找名称，long symbol 场景下通常包含 `SourceName`。UI、snapshot 和对象枚举默认看到完整名称；老配置仍可用短名解析。
+
+`ResolveNode`、`ResolveMessage`、`ResolveSignal`、`ResolveEnvironmentVariable`、`TryResolve*`、runtime handle 解析和 simple facade 都会同时匹配 canonical name 与 aliases。匹配规则仍是 ordinal 大小写敏感；如果多个对象因完整名或别名冲突命中同一个名称，查找会失败关闭，`Resolve*` 抛出歧义异常，`TryResolve*` 返回 `false`。需要人工消歧时可用 `FindNodes`、`FindMessages`、`FindSignals`、`FindEnvironmentVariables` 枚举候选，再改用对象或 handle API。
+
+`SignalPath` 仍保持 `Message.Signal` 形式，不新增转义规则；如果完整 long symbol 本身包含点号，建议通过对象枚举、`Find*` 或预解析 handle 使用。
 
 同一 message 内允许保留同名 signal，以兼容 Vector CANdb++ 可打开但会警告的 DBC。此时 `message.TryResolveSignal(name)` 会返回 `false`，`message.ResolveSignal(name)` 会抛出歧义异常；调用方应使用 `message.FindSignals(name)` 枚举候选。运行时需要可缓存 handle 时，可把具体 `DbcSignal` 对象传给 `channel.ResolveSignal(messageHandle, signal)`，避免按名称静默选错。
 
@@ -145,6 +151,8 @@ if (!result.Succeeded)
 `DbcLoadOptions.MaxStatementLength` 默认限制单条 DBC statement 最长 1 MiB。超长 statement 会被跳过并输出 `DBC_STATEMENT_TOO_LONG` 诊断，调用方可在导入受信任的大型供应商文件时显式调高上限。
 
 首版边界是 CAN/CAN FD 单帧 runtime，但 loader 的 DBC 数据库层会尽量保留 Vector/CANdb++ 有明确依据的元数据。`BO_` payload 长度超过 64 字节时，Lenient 模式会保留 message/signal 并输出 `DBC_MESSAGE_RUNTIME_UNSUPPORTED` warning；这些 message 可用于查看数据库元数据，但 `DbcChannelRuntime` 不会为它们解析 runtime handle，`Dlc` 也不会伪造成 CAN FD DLC。内容冲突的重复 value table 在 Lenient 下保留第一份并 warning；Strict 仍把重复 value table 作为 Error。无法明确归属到唯一 signal 的按名称元数据不会被猜测应用到任意一个同名 signal。当前版本不提供 DBC 导出。
+
+Vector long symbol 的应用发生在 comment、value table、`SIG_VALTYPE_`、`SG_MUL_VAL_` 和属性等按 DBC 源短名绑定的元数据处理之后，因此截断短名仍能正确承载原文件内部引用。若 long symbol 或 alias 产生名称歧义，Lenient 会输出 `DBC_NAME_ALIAS_AMBIGUOUS` warning 并保留文档供枚举查看；Strict 会把该诊断作为 Error，加载结果不会返回成功文档。
 
 ## CAN ID 与 DBC 原始 ID
 

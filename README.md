@@ -22,7 +22,8 @@ DiagKit.Dbc.slnx             Solution
 
 - DBC loader with `Strict` / `Lenient` structured diagnostics.
 - Diagnostic formatting/grouping, `Errors` / `Warnings` helpers, `SignalPath`, and non-hot-path `DbcSimpleRuntime` / `DbcSimpleChannel` entry points.
-- Node, Message, Signal, value table, attribute, multiplexing, and source-line metadata.
+- Node, Message, Signal, environment variable, value table, attribute, multiplexing, and source-line metadata.
+- Vector `System*LongSymbol` compatibility: `Name` uses the full long symbol when present, while `SourceName` / `NameAliases` keep the structural short name usable.
 - CAN/CAN FD frame identifiers, DLC, flags, and timestamp models.
 - Intel/Motorola signal codec, raw/physical conversion, and explicit write policies.
 - Runtime sessions and channels for receive processing, current snapshots, and signal sample streams.

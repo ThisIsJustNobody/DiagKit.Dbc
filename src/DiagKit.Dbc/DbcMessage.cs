@@ -27,7 +27,9 @@ public sealed class DbcMessage
         DbcFrameFlags frameFlags = DbcFrameFlags.None,
         int sourceLine = 0,
         DbcSendType sendType = DbcSendType.Unknown,
-        int? timeoutTimeMs = null)
+        int? timeoutTimeMs = null,
+        string? sourceName = null,
+        IReadOnlyList<string>? nameAliases = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -53,6 +55,8 @@ public sealed class DbcMessage
         RawId = rawId;
         Identifier = rawId.ToCanIdentifier();
         Name = name;
+        SourceName = string.IsNullOrWhiteSpace(sourceName) ? Name : sourceName;
+        NameAliases = DbcNameLookup.CreateAliases(Name, SourceName, nameAliases);
         DataLength = dataLength;
         PrimaryTransmitter = primaryTransmitter ?? throw new ArgumentNullException(nameof(primaryTransmitter));
         Transmitters = Array.AsReadOnly(transmitters is null || transmitters.Count == 0 ? [primaryTransmitter] : transmitters.ToArray());
@@ -67,9 +71,7 @@ public sealed class DbcMessage
         SendType = sendType;
         TimeoutTimeMs = timeoutTimeMs;
 
-        signalsByName = signalArray
-            .GroupBy(signal => signal.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        signalsByName = DbcNameLookup.BuildLookup(signalArray, signal => signal.Name, signal => signal.NameAliases);
         foreach (var signal in Signals)
         {
             signal.AttachToMessage(this);
@@ -92,6 +94,18 @@ public sealed class DbcMessage
     /// 消息名称 / Message name.
     /// </summary>
     public string Name { get; }
+
+    /// <summary>
+    /// DBC 源文件 BO_ 行中的原始 message 名，可能是 Vector 32 字符截断名。<br/>
+    /// Original message name from the DBC BO_ statement, possibly a Vector 32-character truncated name.
+    /// </summary>
+    public string SourceName { get; }
+
+    /// <summary>
+    /// 可用于查找此 message 的额外名称。<br/>
+    /// Additional names that can resolve this message.
+    /// </summary>
+    public IReadOnlyList<string> NameAliases { get; }
 
     /// <summary>
     /// payload 数据长度，DBC 数据库可保存超过当前 CAN/CAN FD 单帧 runtime 支持范围的长度。<br/>
@@ -371,7 +385,7 @@ public sealed class DbcMessage
             {
                 var signal = message.Signals[i];
                 if (signal.Multiplexing.Role == DbcMultiplexingRole.Multiplexor &&
-                    string.Equals(signal.Name, signalName, StringComparison.Ordinal))
+                    DbcNameLookup.Matches(signal.Name, signal.NameAliases, signalName))
                 {
                     return signal;
                 }

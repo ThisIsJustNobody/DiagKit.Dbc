@@ -34,11 +34,15 @@ public sealed class DbcSignal
         double? initialValue = null,
         int sourceLine = 0,
         DbcSendType sendType = DbcSendType.Unknown,
-        int? timeoutTimeMs = null)
+        int? timeoutTimeMs = null,
+        string? sourceName = null,
+        IReadOnlyList<string>? nameAliases = null)
     {
         Name = string.IsNullOrWhiteSpace(name)
             ? throw new ArgumentException("Signal name cannot be empty.", nameof(name))
             : name;
+        SourceName = string.IsNullOrWhiteSpace(sourceName) ? Name : sourceName;
+        NameAliases = DbcNameLookup.CreateAliases(Name, SourceName, nameAliases);
         StartBit = startBit;
         BitLength = bitLength;
         ByteOrder = byteOrder;
@@ -74,6 +78,18 @@ public sealed class DbcSignal
     /// 信号名称 / Signal name.
     /// </summary>
     public string Name { get; }
+
+    /// <summary>
+    /// DBC 源文件 SG_ 行中的原始 signal 名，可能是 Vector 32 字符截断名。<br/>
+    /// Original signal name from the DBC SG_ statement, possibly a Vector 32-character truncated name.
+    /// </summary>
+    public string SourceName { get; }
+
+    /// <summary>
+    /// 可用于查找此 signal 的额外名称。<br/>
+    /// Additional names that can resolve this signal.
+    /// </summary>
+    public IReadOnlyList<string> NameAliases { get; }
 
     /// <summary>
     /// 信号起始 bit 位 (0-based LSB first)。<br/>

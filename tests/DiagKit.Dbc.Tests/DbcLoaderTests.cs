@@ -62,6 +62,159 @@ public sealed class DbcLoaderTests
     }
 
     [TestMethod]
+    public void LoadText_AppliesVectorLongSymbolsAsCanonicalNamesAndAliases()
+    {
+        const string dbcText = """
+            VERSION ""
+            BU_: MCU HOST
+
+            BO_ 256 Msg_Short: 8 MCU
+             SG_ Mode M : 0|8@1+ (1,0) [0|255] "" HOST
+             SG_ Left_Demand_Limit_High_Positive_ m1 : 8|32@1+ (1,0) [0|1000] "rpm" HOST
+            CM_ SG_ 256 Left_Demand_Limit_High_Positive_ "long signal comment";
+            VAL_ 256 Left_Demand_Limit_High_Positive_ 1 "One";
+            SIG_VALTYPE_ 256 Left_Demand_Limit_High_Positive_ : 1;
+            SG_MUL_VAL_ 256 Left_Demand_Limit_High_Positive_ Mode 1-2;
+
+            EV_ EnvShort : 0 [0|1] "bool" 0 1 DUMMY_NODE_VECTOR0 HOST;
+
+            BA_DEF_ BU_ "SystemNodeLongSymbol" STRING ;
+            BA_DEF_ BO_ "SystemMessageLongSymbol" STRING ;
+            BA_DEF_ SG_ "SystemSignalLongSymbol" STRING ;
+            BA_DEF_ EV_ "SystemEnvVarLongSymbol" STRING ;
+            BA_DEF_ EV_ "EnvKind" STRING ;
+            BA_ "SystemNodeLongSymbol" BU_ MCU "Motor_Control_Unit";
+            BA_ "SystemNodeLongSymbol" BU_ HOST "Host_Controller";
+            BA_ "SystemMessageLongSymbol" BO_ 256 "Vehicle_Status_Command_Message";
+            BA_ "SystemSignalLongSymbol" SG_ 256 Mode "Operating_Mode_Value";
+            BA_ "SystemSignalLongSymbol" SG_ 256 Left_Demand_Limit_High_Positive_ "Left_Demand_Limit_High_Positive_Value";
+            BA_ "SystemEnvVarLongSymbol" EV_ EnvShort "Environment_Variable_Long_Name";
+            BA_ "EnvKind" EV_ EnvShort "Calibration";
+            """;
+
+        var result = DbcLoader.LoadText(dbcText, DbcLoadOptions.Strict);
+        var document = result.GetDocumentOrThrow();
+
+        var node = document.ResolveNode("Motor_Control_Unit");
+        Assert.AreEqual("Motor_Control_Unit", node.Name);
+        Assert.AreEqual("MCU", node.SourceName);
+        CollectionAssert.Contains(node.NameAliases.ToArray(), "MCU");
+        Assert.AreSame(node, document.ResolveNode("MCU"));
+        Assert.AreEqual(1, document.FindNodes("MCU").Count);
+        var hostNode = document.ResolveNode("Host_Controller");
+        Assert.AreSame(hostNode, document.ResolveNode("HOST"));
+
+        var message = document.ResolveMessage("Vehicle_Status_Command_Message");
+        Assert.AreEqual("Vehicle_Status_Command_Message", message.Name);
+        Assert.AreEqual("Msg_Short", message.SourceName);
+        CollectionAssert.Contains(message.NameAliases.ToArray(), "Msg_Short");
+        Assert.AreSame(message, document.ResolveMessage("Msg_Short"));
+        Assert.AreEqual("Motor_Control_Unit", message.PrimaryTransmitter.Name);
+        Assert.AreEqual(1, message.Transmitters.Count);
+
+        var mode = message.ResolveSignal("Operating_Mode_Value");
+        Assert.AreEqual("Mode", mode.SourceName);
+        CollectionAssert.Contains(mode.NameAliases.ToArray(), "Mode");
+        Assert.AreSame(mode, message.ResolveSignal("Mode"));
+
+        var signal = message.ResolveSignal("Left_Demand_Limit_High_Positive_Value");
+        Assert.AreEqual("Left_Demand_Limit_High_Positive_Value", signal.Name);
+        Assert.AreEqual("Left_Demand_Limit_High_Positive_", signal.SourceName);
+        CollectionAssert.Contains(signal.NameAliases.ToArray(), "Left_Demand_Limit_High_Positive_");
+        Assert.AreSame(signal, message.ResolveSignal("Left_Demand_Limit_High_Positive_"));
+        Assert.AreEqual("long signal comment", signal.Comment);
+        Assert.AreEqual(DbcSignalValueType.Float, signal.ValueType);
+        Assert.AreEqual("One", signal.ValueDescriptions[1]);
+        Assert.AreEqual("Host_Controller", signal.Receivers.Single().Name);
+
+        Assert.IsTrue(document.EnvironmentVariables.ContainsKey("Environment_Variable_Long_Name"));
+        var env = document.ResolveEnvironmentVariable("Environment_Variable_Long_Name");
+        Assert.AreSame(env, document.ResolveEnvironmentVariable("EnvShort"));
+        Assert.IsTrue(document.TryResolveEnvironmentVariable("EnvShort", out var envByAlias));
+        Assert.AreSame(env, envByAlias);
+        Assert.AreSame(env, document.FindEnvironmentVariables("EnvShort").Single());
+        Assert.AreEqual("Environment_Variable_Long_Name", env.Name);
+        Assert.AreEqual("EnvShort", env.SourceName);
+        CollectionAssert.Contains(env.NameAliases.ToArray(), "EnvShort");
+        Assert.AreEqual("Calibration", env.Attributes["EnvKind"].Value);
+
+        var payload = new byte[8];
+        Assert.IsTrue(message.TryEncodeSignal("Mode", payload, 3).Succeeded);
+        var samples = new SignalSample[message.Signals.Count];
+        message.Decode(payload, samples);
+        Assert.AreEqual(
+            SignalQuality.InactiveMultiplex,
+            samples.Single(x => x.SignalName == "Left_Demand_Limit_High_Positive_Value").Quality);
+
+        var simple = DbcSimpleRuntime.LoadText(dbcText, DbcLoadOptions.Strict);
+        var snapshot = simple.GetSignalViewSnapshot("Msg_Short.Left_Demand_Limit_High_Positive_");
+        Assert.AreEqual("Vehicle_Status_Command_Message", snapshot.MessageName);
+        Assert.AreEqual("Left_Demand_Limit_High_Positive_Value", snapshot.SignalName);
+        Assert.AreEqual(2, simple.GetSignalViewSnapshotsTransmittedBy("MCU").Count);
+        Assert.AreEqual(2, simple.GetSignalViewSnapshotsReceivedBy("HOST").Count);
+
+        var longMessageHandle = simple.RuntimeChannel.ResolveMessage("Vehicle_Status_Command_Message");
+        var shortMessageHandle = simple.RuntimeChannel.ResolveMessage("Msg_Short");
+        Assert.AreEqual(longMessageHandle, shortMessageHandle);
+        Assert.AreEqual(
+            1,
+            simple.RuntimeChannel.RegisterPublishingMessagesTransmittedBy("MCU", TimeSpan.FromMilliseconds(10)).Entries.Count(x => x.Status == DbcPublishingRegistrationStatus.Registered));
+        Assert.AreEqual(
+            simple.RuntimeChannel.ResolveSignal(longMessageHandle, "Left_Demand_Limit_High_Positive_Value"),
+            simple.RuntimeChannel.ResolveSignal(shortMessageHandle, "Left_Demand_Limit_High_Positive_"));
+    }
+
+    [TestMethod]
+    public void LoadText_LongSymbolNameConflictsAreDiagnosedAndLookupFailsClosed()
+    {
+        const string dbcText = """
+            VERSION ""
+            BU_: ECU HOST
+
+            EV_ FirstEnv : 0 [0|1] "bool" 0 1 DUMMY_NODE_VECTOR0 HOST;
+            EV_ SecondEnv : 0 [0|1] "bool" 0 2 DUMMY_NODE_VECTOR0 HOST;
+            BO_ 256 FirstStatus: 8 ECU
+             SG_ FirstSignal : 0|8@1+ (1,0) [0|255] "" HOST
+             SG_ FirstSignalB : 8|8@1+ (1,0) [0|255] "" HOST
+            BO_ 257 SecondStatus: 8 ECU
+             SG_ SecondSignal : 0|8@1+ (1,0) [0|255] "" HOST
+            BA_DEF_ BO_ "SystemMessageLongSymbol" STRING ;
+            BA_DEF_ SG_ "SystemSignalLongSymbol" STRING ;
+            BA_DEF_ EV_ "SystemEnvVarLongSymbol" STRING ;
+            BA_ "SystemMessageLongSymbol" BO_ 256 "Shared_Status";
+            BA_ "SystemMessageLongSymbol" BO_ 257 "Shared_Status";
+            BA_ "SystemSignalLongSymbol" SG_ 256 FirstSignal "Shared_Signal";
+            BA_ "SystemSignalLongSymbol" SG_ 256 FirstSignalB "Shared_Signal";
+            BA_ "SystemSignalLongSymbol" SG_ 257 SecondSignal "Shared_Signal";
+            BA_ "SystemEnvVarLongSymbol" EV_ FirstEnv "Shared_Environment";
+            BA_ "SystemEnvVarLongSymbol" EV_ SecondEnv "Shared_Environment";
+            """;
+
+        var lenient = DbcLoader.LoadText(dbcText, DbcLoadOptions.Lenient);
+        Assert.IsTrue(lenient.Succeeded, string.Join(Environment.NewLine, lenient.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        Assert.IsTrue(lenient.Diagnostics.Any(x => x.Severity == DbcDiagnosticSeverity.Warning && x.Code == "DBC_NAME_ALIAS_AMBIGUOUS"));
+
+        var document = lenient.GetDocumentOrThrow();
+        Assert.AreEqual(2, document.FindMessages("Shared_Status").Count);
+        Assert.IsFalse(document.TryResolveMessage("Shared_Status", out _));
+        Assert.ThrowsExactly<DbcException>(() => document.ResolveMessage("Shared_Status"));
+        Assert.AreEqual(2, document.FindEnvironmentVariables("Shared_Environment").Count);
+        Assert.IsFalse(document.TryResolveEnvironmentVariable("Shared_Environment", out _));
+        Assert.ThrowsExactly<DbcException>(() => document.ResolveEnvironmentVariable("Shared_Environment"));
+        Assert.ThrowsExactly<DbcException>(() => document.ResolveEnvironmentVariable("MissingEnv"));
+        Assert.AreSame(document.ResolveMessage("FirstStatus"), document.FindMessages("FirstStatus").Single());
+        var first = document.ResolveMessage("FirstStatus");
+        Assert.AreEqual(2, first.FindSignals("Shared_Signal").Count);
+        Assert.IsFalse(first.TryResolveSignal("Shared_Signal", out _));
+        Assert.ThrowsExactly<DbcException>(() => first.ResolveSignal("Shared_Signal"));
+
+        var strict = DbcLoader.LoadText(dbcText, DbcLoadOptions.Strict);
+        Assert.IsFalse(strict.Succeeded);
+        Assert.IsNull(strict.Document);
+        Assert.IsTrue(strict.Diagnostics.Any(x => x.Severity == DbcDiagnosticSeverity.Error && x.Code == "DBC_NAME_ALIAS_AMBIGUOUS"));
+    }
+
+    [TestMethod]
     public void LoadText_MapsSignalValueTypeToFloat()
     {
         const string dbcText = """

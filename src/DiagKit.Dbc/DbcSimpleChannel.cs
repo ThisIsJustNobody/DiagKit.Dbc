@@ -309,7 +309,7 @@ public sealed class DbcSimpleChannel
             throw new DbcException($"Signal '{signalPath}' is ambiguous. Use FindSignals(...) or object-based runtime handle resolution.");
         }
 
-        var messageHandle = channel.ResolveMessage(signalPath.MessageName);
+        var messageHandle = channel.ResolveMessage(message.Identifier);
         return channel.ResolveSignal(messageHandle, matches[0]);
     }
 
@@ -322,7 +322,7 @@ public sealed class DbcSimpleChannel
         var snapshots = new List<DbcSignalViewSnapshot>();
         foreach (var message in messages)
         {
-            var hasRuntimeHandle = channel.TryResolveMessage(message.Name, out var messageHandle);
+            var hasRuntimeHandle = channel.TryResolveMessage(message.Identifier, out var messageHandle);
             foreach (var signal in message.Signals)
             {
                 if (includeSignal is not null && !includeSignal(signal))
@@ -363,7 +363,7 @@ public sealed class DbcSimpleChannel
     {
         foreach (var node in nodes)
         {
-            if (string.Equals(node.Name, nodeName, StringComparison.Ordinal))
+            if (DbcNameLookup.Matches(node.Name, node.NameAliases, nodeName))
             {
                 return true;
             }
