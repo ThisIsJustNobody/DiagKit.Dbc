@@ -385,7 +385,6 @@ internal static partial class DbcWriteValidator
         DbcRelationAttributeDefinition definition,
         List<DbcDiagnostic> diagnostics)
     {
-        var value = new DbcAttributeValue(attributeName, definition.ValueKind, rawValue, rawValue);
         var attributeDefinition = new DbcAttributeDefinition(
             definition.Name,
             DbcAttributeOwnerKind.Network,
@@ -393,6 +392,10 @@ internal static partial class DbcWriteValidator
             definition.EnumValues,
             definition.Minimum,
             definition.Maximum);
+        var parsedValue = TryGetExpectedAttributeValue(attributeDefinition, rawValue, out var expectedValue)
+            ? expectedValue
+            : rawValue;
+        var value = new DbcAttributeValue(attributeName, definition.ValueKind, rawValue, parsedValue);
         ValidateAttributeValue(objectKind, objectName, value, attributeDefinition, diagnostics);
     }
 
@@ -611,25 +614,36 @@ internal static partial class DbcWriteValidator
         switch (definition.ValueKind)
         {
             case DbcAttributeValueKind.Integer:
-                if (!IsCanonicalRawToken(value.RawValue) ||
-                    !long.TryParse(value.RawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                if (!TryParseIntegerAttributeRaw(value.RawValue, out var parsedInteger))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+                else if (!value.TryGetInt64(out var actualInteger) ||
+                    actualInteger != parsedInteger)
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
 
                 break;
             case DbcAttributeValueKind.Hex:
-                if (!IsCanonicalRawToken(value.RawValue) ||
-                    !TryParseHexOrDecimalInteger(value.RawValue))
+                if (!TryParseHexOrDecimalInteger(value.RawValue, out var parsedHex))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+                else if (!value.TryGetUInt64(out var actualHex) ||
+                    actualHex != parsedHex)
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
 
                 break;
             case DbcAttributeValueKind.Float:
-                if (!IsCanonicalRawToken(value.RawValue) ||
-                    !double.TryParse(value.RawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ||
-                    !double.IsFinite(parsed))
+                if (!TryParseFloatAttributeRaw(value.RawValue, out var parsedFloat))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+                else if (!value.TryGetDouble(out var actualFloat) ||
+                    actualFloat != parsedFloat)
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
@@ -640,10 +654,15 @@ internal static partial class DbcWriteValidator
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
+                else if (value.Value is not string actualString ||
+                    !string.Equals(actualString, value.RawValue, StringComparison.Ordinal))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
 
                 break;
             case DbcAttributeValueKind.Enum:
-                if (!IsValidEnumAttributeValue(value.RawValue, definition.EnumValues))
+                if (!TryGetExpectedEnumAttributeValue(value.RawValue, definition.EnumValues, out var expectedEnumValue))
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
@@ -652,30 +671,118 @@ internal static partial class DbcWriteValidator
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
+                else if (value.Value is not string actualEnumValue ||
+                    !string.Equals(actualEnumValue, expectedEnumValue, StringComparison.Ordinal))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
 
                 break;
         }
     }
 
-    private static bool TryParseHexOrDecimalInteger(string rawValue)
+    private static bool TryGetExpectedAttributeValue(DbcAttributeDefinition definition, string rawValue, out object? expectedValue)
     {
-        if (rawValue.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        switch (definition.ValueKind)
         {
-            return ulong.TryParse(rawValue[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _);
+            case DbcAttributeValueKind.Integer:
+                if (TryParseIntegerAttributeRaw(rawValue, out var integerValue))
+                {
+                    expectedValue = integerValue;
+                    return true;
+                }
+
+                break;
+            case DbcAttributeValueKind.Hex:
+                if (TryParseHexOrDecimalInteger(rawValue, out var hexValue))
+                {
+                    expectedValue = hexValue;
+                    return true;
+                }
+
+                break;
+            case DbcAttributeValueKind.Float:
+                if (TryParseFloatAttributeRaw(rawValue, out var floatValue))
+                {
+                    expectedValue = floatValue;
+                    return true;
+                }
+
+                break;
+            case DbcAttributeValueKind.String:
+                if (IsSafeQuotedTextValue(rawValue))
+                {
+                    expectedValue = rawValue;
+                    return true;
+                }
+
+                break;
+            case DbcAttributeValueKind.Enum:
+                if (TryGetExpectedEnumAttributeValue(rawValue, definition.EnumValues, out var enumValue))
+                {
+                    expectedValue = enumValue;
+                    return true;
+                }
+
+                break;
         }
 
-        return ulong.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+        expectedValue = null;
+        return false;
     }
 
-    private static bool IsValidEnumAttributeValue(string rawValue, IReadOnlyList<string> enumValues)
+    private static bool TryParseIntegerAttributeRaw(string rawValue, out long value)
+    {
+        value = default;
+        return IsCanonicalRawToken(rawValue) &&
+            long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryParseHexOrDecimalInteger(string rawValue, out ulong value)
+    {
+        value = default;
+        if (rawValue.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsCanonicalRawToken(rawValue) &&
+                rawValue.Length > 2 &&
+                ulong.TryParse(rawValue[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+        }
+
+        return IsCanonicalRawToken(rawValue) &&
+            ulong.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryParseFloatAttributeRaw(string rawValue, out double value)
+    {
+        value = default;
+        return IsCanonicalRawToken(rawValue) &&
+            double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
+            double.IsFinite(value);
+    }
+
+    private static bool TryGetExpectedEnumAttributeValue(string rawValue, IReadOnlyList<string> enumValues, out string expectedValue)
     {
         if (IsCanonicalRawToken(rawValue) &&
             int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index))
         {
-            return index >= 0 && index < enumValues.Count;
+            if (index >= 0 && index < enumValues.Count)
+            {
+                expectedValue = enumValues[index];
+                return true;
+            }
+
+            expectedValue = string.Empty;
+            return false;
         }
 
-        return enumValues.Contains(rawValue, StringComparer.Ordinal);
+        if (enumValues.Contains(rawValue, StringComparer.Ordinal))
+        {
+            expectedValue = rawValue;
+            return true;
+        }
+
+        expectedValue = string.Empty;
+        return false;
     }
 
     private static bool IsNumericAttributeRawValue(string rawValue)
