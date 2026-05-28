@@ -14,6 +14,7 @@ public sealed class DbcDocumentBuilder
     private readonly Dictionary<string, DbcRelationAttributeDefinition> relationAttributeDefinitions;
     private readonly Dictionary<string, DbcRelationAttributeDefault> relationAttributeDefaults;
     private readonly List<DbcRelationAttributeValue> relationAttributes;
+    private readonly List<DbcNode> preservedNodeSources = [];
     private string? comment;
 
     private DbcDocumentBuilder()
@@ -92,10 +93,25 @@ public sealed class DbcDocumentBuilder
 
     private void AddPreservedNode(DbcNode node)
     {
-        if (FindNode(node.Name) is null)
+        foreach (var preservedNode in preservedNodeSources)
         {
-            nodes.Add(DbcNodeBuilder.FromNode(node));
+            if (ReferenceEquals(preservedNode, node))
+            {
+                return;
+            }
         }
+
+        foreach (var builder in nodes)
+        {
+            if (builder.SemanticallyEquals(node))
+            {
+                preservedNodeSources.Add(node);
+                return;
+            }
+        }
+
+        nodes.Add(DbcNodeBuilder.FromNode(node));
+        preservedNodeSources.Add(node);
     }
 
     /// <summary>
@@ -155,19 +171,17 @@ public sealed class DbcDocumentBuilder
     {
         EnsureReferencedNodes();
 
-        var nodesByName = new Dictionary<string, DbcNode>(StringComparer.Ordinal);
         var builtNodes = new List<DbcNode>(nodes.Count);
         foreach (var nodeBuilder in nodes)
         {
-            var node = nodeBuilder.Build();
-            builtNodes.Add(node);
-            nodesByName.TryAdd(node.Name, node);
+            builtNodes.Add(nodeBuilder.Build());
         }
 
+        var nodeLookup = BuildNodeLookup(builtNodes);
         var builtMessages = new List<DbcMessage>(messages.Count);
         foreach (var messageBuilder in messages)
         {
-            builtMessages.Add(messageBuilder.Build(nodesByName));
+            builtMessages.Add(messageBuilder.Build(nodeLookup));
         }
 
         return new DbcDocument(
@@ -213,23 +227,24 @@ public sealed class DbcDocumentBuilder
 
     private void EnsureNode(string name)
     {
-        if (FindNode(name) is null)
+        if (FindNodes(name).Count == 0)
         {
             nodes.Add(new DbcNodeBuilder(name));
         }
     }
 
-    private DbcNodeBuilder? FindNode(string name)
+    private List<DbcNodeBuilder> FindNodes(string name)
     {
+        var matches = new List<DbcNodeBuilder>();
         foreach (var node in nodes)
         {
             if (MatchesName(node.Name, node.SourceName, node.NameAliases, name))
             {
-                return node;
+                matches.Add(node);
             }
         }
 
-        return null;
+        return matches;
     }
 
     internal static bool MatchesName(string name, string sourceName, IReadOnlyList<string> aliases, string candidate)
@@ -251,11 +266,49 @@ public sealed class DbcDocumentBuilder
         return false;
     }
 
-    internal static DbcNode ResolveNode(IReadOnlyDictionary<string, DbcNode> nodesByName, string name)
+    internal static Dictionary<string, List<DbcNode>> BuildNodeLookup(IReadOnlyList<DbcNode> nodes)
     {
-        return nodesByName.TryGetValue(name, out var node)
-            ? node
-            : throw new DbcException($"Node '{name}' was not found.");
+        var lookup = new Dictionary<string, List<DbcNode>>(StringComparer.Ordinal);
+        foreach (var node in nodes)
+        {
+            AddNodeLookup(lookup, node.Name, node);
+            AddNodeLookup(lookup, node.SourceName, node);
+            foreach (var alias in node.NameAliases)
+            {
+                AddNodeLookup(lookup, alias, node);
+            }
+        }
+
+        return lookup;
+    }
+
+    internal static DbcNode ResolveNode(IReadOnlyDictionary<string, List<DbcNode>> nodesByName, string name)
+    {
+        if (!nodesByName.TryGetValue(name, out var nodes) || nodes.Count == 0)
+        {
+            throw new DbcException($"Node '{name}' was not found.");
+        }
+
+        if (nodes.Count > 1)
+        {
+            throw new DbcException($"Node '{name}' is ambiguous.");
+        }
+
+        return nodes[0];
+    }
+
+    private static void AddNodeLookup(Dictionary<string, List<DbcNode>> lookup, string name, DbcNode node)
+    {
+        if (!lookup.TryGetValue(name, out var matches))
+        {
+            matches = [];
+            lookup[name] = matches;
+        }
+
+        if (!matches.Contains(node))
+        {
+            matches.Add(node);
+        }
     }
 
     private static void CopyDictionary<TValue>(
@@ -317,6 +370,45 @@ public sealed class DbcNodeBuilder
     internal DbcNode Build()
     {
         return new DbcNode(Name, Comment, attributes, SourceName, NameAliases);
+    }
+
+    internal bool SemanticallyEquals(DbcNode node)
+    {
+        return string.Equals(Name, node.Name, StringComparison.Ordinal) &&
+            string.Equals(SourceName, node.SourceName, StringComparison.Ordinal) &&
+            string.Equals(Comment, node.Comment, StringComparison.Ordinal) &&
+            NameAliases.SequenceEqual(node.NameAliases, StringComparer.Ordinal) &&
+            AttributesEqual(attributes, node.Attributes);
+    }
+
+    private static bool AttributesEqual(
+        IReadOnlyDictionary<string, DbcAttributeValue> left,
+        IReadOnlyDictionary<string, DbcAttributeValue> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        foreach (var item in left)
+        {
+            if (!right.TryGetValue(item.Key, out var rightValue) ||
+                !AttributeValueEquals(item.Value, rightValue))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool AttributeValueEquals(DbcAttributeValue left, DbcAttributeValue right)
+    {
+        return string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+            left.ValueKind == right.ValueKind &&
+            string.Equals(left.RawValue, right.RawValue, StringComparison.Ordinal) &&
+            Equals(left.Value, right.Value) &&
+            left.SourceLine == right.SourceLine;
     }
 }
 
@@ -438,7 +530,7 @@ public sealed class DbcMessageBuilder
         return DbcDocumentBuilder.MatchesName(Name, SourceName, NameAliases, candidate);
     }
 
-    internal DbcMessage Build(IReadOnlyDictionary<string, DbcNode> nodesByName)
+    internal DbcMessage Build(IReadOnlyDictionary<string, List<DbcNode>> nodesByName)
     {
         var primaryTransmitter = DbcDocumentBuilder.ResolveNode(nodesByName, PrimaryTransmitterName);
         var transmitters = transmitterNames.Select(name => DbcDocumentBuilder.ResolveNode(nodesByName, name)).ToArray();
@@ -655,7 +747,7 @@ public sealed class DbcSignalBuilder
         return this;
     }
 
-    internal DbcSignal Build(IReadOnlyDictionary<string, DbcNode> nodesByName)
+    internal DbcSignal Build(IReadOnlyDictionary<string, List<DbcNode>> nodesByName)
     {
         var receivers = receiverNames.Select(name => DbcDocumentBuilder.ResolveNode(nodesByName, name)).ToArray();
         return new DbcSignal(

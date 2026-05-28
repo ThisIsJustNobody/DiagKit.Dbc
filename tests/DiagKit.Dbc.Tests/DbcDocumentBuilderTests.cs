@@ -64,4 +64,52 @@ public sealed class DbcDocumentBuilderTests
         Assert.AreEqual("km/h", signal.Unit);
         Assert.AreEqual("Tool", signal.Receivers.Single().Name);
     }
+
+    [TestMethod]
+    public void FromDocument_SourceNameNodeReferences_BuildsWritableDocument()
+    {
+        var ecu = new DbcNode("LongEngineController", sourceName: "ECU");
+        var tool = new DbcNode("LongDiagnosticTool", sourceName: "Tool");
+        var original = new DbcDocument([ecu, tool], []);
+        var builder = DbcDocumentBuilder.FromDocument(original);
+
+        builder
+            .AddMessage(new DbcRawMessageId(512), "Command", 8, "ECU")
+            .AddSignal("Request", 0, 8)
+            .WithReceiver("Tool");
+
+        var text = DbcWriter.WriteTextOrThrow(builder.Build());
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+
+        var message = reloaded.ResolveMessage("Command");
+        Assert.AreEqual("LongEngineController", message.PrimaryTransmitter.Name);
+        Assert.AreEqual("LongDiagnosticTool", message.ResolveSignal("Request").Receivers.Single().Name);
+    }
+
+    [TestMethod]
+    public void FromDocument_AliasCanonicalCollision_PreservesDistinctNodes()
+    {
+        var aliasedNode = new DbcNode("Controller", sourceName: "Tool");
+        var canonicalCollision = new DbcNode("Tool", comment: "distinct node");
+        var original = new DbcDocument([aliasedNode, canonicalCollision], []);
+
+        var document = DbcDocumentBuilder.FromDocument(original).Build();
+
+        Assert.AreEqual(2, document.Nodes.Count);
+        Assert.IsTrue(document.Nodes.Any(x => x.Name == "Controller"));
+        Assert.IsTrue(document.Nodes.Any(x => x.Name == "Tool" && x.Comment == "distinct node"));
+        Assert.IsFalse(DbcWriter.WriteText(document).Succeeded);
+    }
+
+    [TestMethod]
+    public void FromDocument_AmbiguousSourceNameReference_Throws()
+    {
+        var aliasedNode = new DbcNode("Controller", sourceName: "ECU");
+        var canonicalCollision = new DbcNode("ECU");
+        var builder = DbcDocumentBuilder.FromDocument(new DbcDocument([aliasedNode, canonicalCollision], []));
+
+        builder.AddMessage(new DbcRawMessageId(768), "Ambiguous", 8, "ECU");
+
+        Assert.ThrowsExactly<DbcException>(() => builder.Build());
+    }
 }
