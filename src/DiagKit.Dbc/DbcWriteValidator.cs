@@ -57,6 +57,14 @@ internal static partial class DbcWriteValidator
                 $"Signal '{message.Name}.{signal.Name}' uses {signal.ValueType}, but Task 2 normalized export does not emit SIG_VALTYPE_ yet."));
         }
 
+        if (signal.Multiplexing.SwitchRanges.Count > 0 ||
+            !string.IsNullOrEmpty(signal.Multiplexing.MultiplexorSignalName))
+        {
+            diagnostics.Add(Error(
+                "DBC_WRITE_UNSUPPORTED_MULTIPLEXING",
+                $"Signal '{message.Name}.{signal.Name}' uses extended multiplexing, but Task 2 normalized export does not emit SG_MUL_VAL_ yet."));
+        }
+
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Factor), signal.Factor, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Offset), signal.Offset, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Minimum), signal.Minimum, diagnostics);

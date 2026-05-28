@@ -225,4 +225,70 @@ public sealed class DbcWriterTests
         StringAssert.Contains(text, "BO_ 256 CanonicalStatus: 8 CanonicalEcu");
         StringAssert.Contains(text, " SG_ CanonicalSpeed : 0|16@1+ (1,0) [0|250] \"km/h\" CanonicalTool");
     }
+
+    [TestMethod]
+    public void WriteText_ExtendedMultiplexing_ReturnsUnsupportedMultiplexingError()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(1, 3)])),
+                    ]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_MULTIPLEXING");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
+    public void WriteText_MultiplexedSignalWithExtendedRanges_ReturnsUnsupportedMultiplexingError()
+    {
+        var ecu = new DbcNode("ECU");
+        var multiplexing = DbcMultiplexing.Multiplexed(1)
+            .WithExtendedRanges("Mode", [new DbcMultiplexorRange(1, 3)]);
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal("Speed", 8, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [ecu], multiplexing),
+                    ]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_MULTIPLEXING");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
 }
