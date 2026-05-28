@@ -279,6 +279,30 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
+    public void WriteText_ReferencedNodesWithSameExportNameAndDifferentComments_ReturnsNameCollisionError()
+    {
+        var primary = new DbcNode("ECU", "primary comment");
+        var receiver = new DbcNode("ECU", "receiver comment");
+        var document = new DbcDocument(
+            [],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "CollisionStatus",
+                    8,
+                    primary,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [receiver])]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_NAME_COLLISION");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
     public void WriteText_AdditionalTransmitters_ReturnsUnsupportedAdditionalTransmittersError()
     {
         var ecu = new DbcNode("ECU");

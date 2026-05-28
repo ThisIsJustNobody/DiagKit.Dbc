@@ -19,6 +19,7 @@ internal static partial class DbcWriteValidator
         ValidateDocumentMetadata(document, diagnostics);
         ValidateObjectName("node", document.Nodes.Select(x => DbcWriterNameFormatter.GetNodeExportName(x, options)), diagnostics);
         ValidateObjectName("message", document.Messages.Select(x => DbcWriterNameFormatter.GetMessageExportName(x, options)), diagnostics);
+        ValidateReferencedNodeCommentCollisions(document, options, diagnostics);
         foreach (var node in document.Nodes)
         {
             ValidateLongSymbolExport("Node", node.Name, DbcWriterNameFormatter.GetNodeExportName(node, options), diagnostics);
@@ -81,6 +82,54 @@ internal static partial class DbcWriteValidator
         }
 
         return new DbcValidationResult(diagnostics);
+    }
+
+    private static void ValidateReferencedNodeCommentCollisions(
+        DbcDocument document,
+        DbcWriterOptions options,
+        List<DbcDiagnostic> diagnostics)
+    {
+        var commentsByExportName = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var node in EnumerateReferencedNodes(document))
+        {
+            if (node.Comment is null)
+            {
+                continue;
+            }
+
+            var exportName = DbcWriterNameFormatter.GetNodeExportName(node, options);
+            if (commentsByExportName.TryGetValue(exportName, out var existingComment) &&
+                !string.Equals(existingComment, node.Comment, StringComparison.Ordinal))
+            {
+                diagnostics.Add(Error(
+                    "DBC_WRITE_NAME_COLLISION",
+                    $"Node export name '{exportName}' is referenced by multiple nodes with different comments."));
+                continue;
+            }
+
+            commentsByExportName[exportName] = node.Comment;
+        }
+    }
+
+    private static IEnumerable<DbcNode> EnumerateReferencedNodes(DbcDocument document)
+    {
+        foreach (var node in document.Nodes)
+        {
+            yield return node;
+        }
+
+        foreach (var message in document.Messages)
+        {
+            yield return message.PrimaryTransmitter;
+
+            foreach (var signal in message.Signals)
+            {
+                foreach (var receiver in signal.Receivers)
+                {
+                    yield return receiver;
+                }
+            }
+        }
     }
 
     private static bool HasUnsupportedTransmitters(DbcMessage message)

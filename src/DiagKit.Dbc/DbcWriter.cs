@@ -210,7 +210,7 @@ public static class DbcWriter
             builder.Append("CM_ \"").Append(EscapeQuotedText(document.Comment)).Append("\";").Append(newline);
         }
 
-        foreach (var node in GetNodes(document, options))
+        foreach (var node in GetCommentNodes(document, options))
         {
             if (node.Comment is null)
             {
@@ -252,6 +252,45 @@ public static class DbcWriter
                     .Append(EscapeQuotedText(signal.Comment))
                     .Append("\";")
                     .Append(newline);
+            }
+        }
+    }
+
+    private static IEnumerable<DbcNode> GetCommentNodes(DbcDocument document, DbcWriterOptions options)
+    {
+        var nodesByExportName = new Dictionary<string, DbcNode>(StringComparer.Ordinal);
+        foreach (var node in EnumerateReferencedNodes(document))
+        {
+            var exportName = DbcWriterNameFormatter.GetNodeExportName(node, options);
+            if (!nodesByExportName.TryGetValue(exportName, out var existingNode) ||
+                existingNode.Comment is null && node.Comment is not null)
+            {
+                nodesByExportName[exportName] = node;
+            }
+        }
+
+        return options.SortMode == DbcWriterSortMode.Stable
+            ? nodesByExportName.OrderBy(item => item.Key, StringComparer.Ordinal).Select(item => item.Value)
+            : nodesByExportName.Values;
+    }
+
+    private static IEnumerable<DbcNode> EnumerateReferencedNodes(DbcDocument document)
+    {
+        foreach (var node in document.Nodes)
+        {
+            yield return node;
+        }
+
+        foreach (var message in document.Messages)
+        {
+            yield return message.PrimaryTransmitter;
+
+            foreach (var signal in message.Signals)
+            {
+                foreach (var receiver in signal.Receivers)
+                {
+                    yield return receiver;
+                }
             }
         }
     }

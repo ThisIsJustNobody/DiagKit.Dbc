@@ -69,6 +69,32 @@ public sealed class DbcWriterReloadEquivalenceTests
     }
 
     [TestMethod]
+    public void WriteText_ReferencedOnlyNodeComments_ReloadsEquivalentComments()
+    {
+        var listedNode = new DbcNode("ListedNode");
+        var ecu = new DbcNode("ECU", "primary transmitter comment");
+        var tool = new DbcNode("Tool", "receiver comment");
+        var original = new DbcDocument(
+            [listedNode],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(257),
+                    "ReferencedOnlyStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool])]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "CM_ BU_ ECU \"primary transmitter comment\";");
+        StringAssert.Contains(text, "CM_ BU_ Tool \"receiver comment\";");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.AreEqual("primary transmitter comment", reloaded.ResolveNode("ECU").Comment);
+        Assert.AreEqual("receiver comment", reloaded.ResolveNode("Tool").Comment);
+    }
+
+    [TestMethod]
     public void WriteText_FloatAndDoubleSignals_EmitSigValTypeAndReloadEquivalentTypes()
     {
         var ecu = new DbcNode("ECU");
