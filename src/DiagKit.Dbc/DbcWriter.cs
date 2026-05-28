@@ -103,7 +103,7 @@ public static class DbcWriter
         builder.Append("BU_:");
         foreach (var node in GetNodes(document, options))
         {
-            builder.Append(' ').Append(GetExportName(node));
+            builder.Append(' ').Append(DbcWriterNameFormatter.GetNodeExportName(node, options));
         }
 
         builder.Append(newline);
@@ -113,12 +113,21 @@ public static class DbcWriter
     private static IEnumerable<DbcNode> GetNodes(DbcDocument document, DbcWriterOptions options)
     {
         return options.SortMode == DbcWriterSortMode.Stable
-            ? document.Nodes.OrderBy(GetExportName, StringComparer.Ordinal)
+            ? document.Nodes.OrderBy(node => DbcWriterNameFormatter.GetNodeExportName(node, options), StringComparer.Ordinal)
             : document.Nodes;
     }
+}
 
-    private static string GetExportName(DbcNode node)
+internal static class DbcWriterNameFormatter
+{
+    internal static string GetNodeExportName(DbcNode node, DbcWriterOptions options)
     {
-        return node.SourceName;
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentNullException.ThrowIfNull(options);
+
+        return options.NameExportPolicy == DbcNameExportPolicy.UseCanonicalNamesWhenValid &&
+            DbcWriteValidator.IsValidIdentifier(node.Name)
+                ? node.Name
+                : node.SourceName;
     }
 }

@@ -10,18 +10,8 @@ internal static partial class DbcWriteValidator
         options ??= DbcWriterOptions.Default;
 
         var diagnostics = new List<DbcDiagnostic>();
-        ValidateObjectName("node", document.Nodes.Select(x => x.Name), diagnostics, options);
-        ValidateObjectName("message", document.Messages.Select(x => x.Name), diagnostics, options);
-
-        foreach (var node in document.Nodes)
-        {
-            if (!IsValidIdentifier(node.SourceName))
-            {
-                diagnostics.Add(Error(
-                    "DBC_WRITE_INVALID_IDENTIFIER",
-                    $"Node '{node.Name}' source name '{node.SourceName}' is not a valid DBC identifier."));
-            }
-        }
+        ValidateObjectName("node", document.Nodes.Select(x => DbcWriterNameFormatter.GetNodeExportName(x, options)), diagnostics);
+        ValidateObjectName("message", document.Messages.Select(x => x.Name), diagnostics);
 
         foreach (var message in document.Messages)
         {
@@ -40,7 +30,7 @@ internal static partial class DbcWriteValidator
                     $"Message '{message.Name}' payload length {message.DataLength} can be exported as metadata but is not supported by the CAN/CAN FD single-frame runtime."));
             }
 
-            ValidateObjectName($"signal in message '{message.Name}'", message.Signals.Select(x => x.Name), diagnostics, options);
+            ValidateObjectName($"signal in message '{message.Name}'", message.Signals.Select(x => x.Name), diagnostics);
             foreach (var signal in message.Signals)
             {
                 if (!IsValidIdentifier(signal.SourceName))
@@ -60,7 +50,7 @@ internal static partial class DbcWriteValidator
         return !string.IsNullOrWhiteSpace(value) && DbcIdentifierRegex().IsMatch(value);
     }
 
-    private static void ValidateObjectName(string scope, IEnumerable<string> names, List<DbcDiagnostic> diagnostics, DbcWriterOptions options)
+    private static void ValidateObjectName(string scope, IEnumerable<string> names, List<DbcDiagnostic> diagnostics)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var name in names)
@@ -71,17 +61,9 @@ internal static partial class DbcWriteValidator
             }
             else if (!seen.Add(name))
             {
-                diagnostics.Add(CreateNameCollisionDiagnostic(scope, name, options));
+                diagnostics.Add(Error("DBC_WRITE_NAME_COLLISION", $"{scope} name '{name}' appears more than once."));
             }
         }
-    }
-
-    private static DbcDiagnostic CreateNameCollisionDiagnostic(string scope, string name, DbcWriterOptions options)
-    {
-        var severity = options.Mode == DbcWriteMode.Lenient
-            ? DbcDiagnosticSeverity.Warning
-            : DbcDiagnosticSeverity.Error;
-        return new DbcDiagnostic(severity, "DBC_WRITE_NAME_COLLISION", $"{scope} name '{name}' appears more than once.");
     }
 
     private static DbcDiagnostic Error(string code, string message)
