@@ -137,11 +137,25 @@ internal static partial class DbcWriteValidator
         DbcWriterOptions options,
         List<DbcDiagnostic> diagnostics)
     {
+        var documentNodes = new HashSet<DbcNode>(document.Nodes);
+        var canonicalNamesByExportName = new Dictionary<string, (string Name, bool IsDocumentNode)>(StringComparer.Ordinal);
         var commentsByExportName = new Dictionary<string, string>(StringComparer.Ordinal);
         var attributesByExportName = new Dictionary<string, IReadOnlyDictionary<string, DbcAttributeValue>>(StringComparer.Ordinal);
         foreach (var node in EnumerateReferencedNodes(document))
         {
             var exportName = DbcWriterNameFormatter.GetNodeExportName(node, options);
+            var isDocumentNode = documentNodes.Contains(node);
+            if (canonicalNamesByExportName.TryGetValue(exportName, out var existingCanonicalName) &&
+                !string.Equals(existingCanonicalName.Name, node.Name, StringComparison.Ordinal) &&
+                (!existingCanonicalName.IsDocumentNode || !isDocumentNode))
+            {
+                diagnostics.Add(Error(
+                    "DBC_WRITE_NAME_COLLISION",
+                    $"Node export name '{exportName}' is referenced by multiple nodes with different canonical names."));
+                continue;
+            }
+
+            canonicalNamesByExportName[exportName] = (node.Name, isDocumentNode);
             if (node.Comment is not null)
             {
                 if (commentsByExportName.TryGetValue(exportName, out var existingComment) &&

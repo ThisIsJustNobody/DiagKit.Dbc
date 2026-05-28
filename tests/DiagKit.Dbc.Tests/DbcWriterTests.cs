@@ -308,6 +308,97 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
+    public void WriteText_UseCanonicalNamesWhenValid_DoesNotEmitLongSymbolWhenCanonicalNameIsExported()
+    {
+        var ecu = new DbcNode("CanonicalEcu", sourceName: "ECU");
+        var tool = new DbcNode("CanonicalTool", sourceName: "Tool");
+        var variable = new DbcEnvironmentVariable(
+            "CanonicalEnv",
+            0,
+            0,
+            1,
+            "",
+            0,
+            1,
+            "DUMMY_NODE_VECTOR0",
+            sourceName: "EnvShort");
+        var document = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(770),
+                    "CanonicalStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool], sourceName: "SpeedShort")],
+                    sourceName: "StatusShort"),
+            ],
+            environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
+            {
+                [variable.Name] = variable,
+            });
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        StringAssert.Contains(text, "BU_: CanonicalEcu CanonicalTool");
+        StringAssert.Contains(text, "BO_ 770 CanonicalStatus: 8 CanonicalEcu");
+        StringAssert.Contains(text, " SG_ CanonicalSpeed : 0|16@1+ (1,0) [0|250] \"km/h\" CanonicalTool");
+        StringAssert.Contains(text, "EV_ CanonicalEnv : 0 [0|1] \"\" 0 1 DUMMY_NODE_VECTOR0;");
+        Assert.IsFalse(text.Contains("SystemNodeLongSymbol", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("SystemMessageLongSymbol", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("SystemSignalLongSymbol", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("SystemEnvVarLongSymbol", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void WriteText_UseCanonicalNamesWhenValidWithInvalidCanonicalNameFallback_EmitsLongSymbol()
+    {
+        var ecu = new DbcNode("Invalid Node Name", sourceName: "ECU");
+        var document = new DbcDocument([ecu], []);
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        StringAssert.Contains(text, "BU_: ECU");
+        StringAssert.Contains(text, "BA_ \"SystemNodeLongSymbol\" BU_ ECU \"Invalid Node Name\";");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("Invalid Node Name", out _));
+        Assert.IsTrue(reloaded.TryResolveNode("ECU", out _));
+    }
+
+    [TestMethod]
+    public void WriteText_ReferencedOnlyNodesWithSameExportNameAndDifferentCanonicalNames_ReturnsNameCollisionError()
+    {
+        var ecu = new DbcNode("ECU");
+        var receiver = new DbcNode("CanonicalReceiverNode", sourceName: "Tool");
+        var additionalTransmitter = new DbcNode("CanonicalAdditionalTransmitterNode", sourceName: "Tool");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(771),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Mode", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [receiver])],
+                    transmitters: [ecu, additionalTransmitter]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_NAME_COLLISION"));
+    }
+
+    [TestMethod]
     public void WriteText_ReferencedNodesWithSameExportNameAndDifferentComments_ReturnsNameCollisionError()
     {
         var primary = new DbcNode("ECU", "primary comment");
