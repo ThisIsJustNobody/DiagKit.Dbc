@@ -150,9 +150,47 @@ if (!result.Succeeded)
 
 `DbcLoadOptions.MaxStatementLength` 默认限制单条 DBC statement 最长 1 MiB。超长 statement 会被跳过并输出 `DBC_STATEMENT_TOO_LONG` 诊断，调用方可在导入受信任的大型供应商文件时显式调高上限。
 
-首版边界是 CAN/CAN FD 单帧 runtime，但 loader 的 DBC 数据库层会尽量保留 Vector/CANdb++ 有明确依据的元数据。`BO_` payload 长度超过 64 字节时，Lenient 模式会保留 message/signal 并输出 `DBC_MESSAGE_RUNTIME_UNSUPPORTED` warning；这些 message 可用于查看数据库元数据，但 `DbcChannelRuntime` 不会为它们解析 runtime handle，`Dlc` 也不会伪造成 CAN FD DLC。内容冲突的重复 value table 在 Lenient 下保留第一份并 warning；Strict 仍把重复 value table 作为 Error。无法明确归属到唯一 signal 的按名称元数据不会被猜测应用到任意一个同名 signal。当前版本不提供 DBC 导出。
+首版边界是 CAN/CAN FD 单帧 runtime，但 loader 的 DBC 数据库层会尽量保留 Vector/CANdb++ 有明确依据的元数据。`BO_` payload 长度超过 64 字节时，Lenient 模式会保留 message/signal 并输出 `DBC_MESSAGE_RUNTIME_UNSUPPORTED` warning；这些 message 可用于查看数据库元数据，但 `DbcChannelRuntime` 不会为它们解析 runtime handle，`Dlc` 也不会伪造成 CAN FD DLC。内容冲突的重复 value table 在 Lenient 下保留第一份并 warning；Strict 仍把重复 value table 作为 Error。无法明确归属到唯一 signal 的按名称元数据不会被猜测应用到任意一个同名 signal。
 
 Vector long symbol 的应用发生在 comment、value table、`SIG_VALTYPE_`、`SG_MUL_VAL_` 和属性等按 DBC 源短名绑定的元数据处理之后，因此截断短名仍能正确承载原文件内部引用。若 long symbol 或 alias 产生名称歧义，Lenient 会输出 `DBC_NAME_ALIAS_AMBIGUOUS` warning 并保留文档供枚举查看；Strict 会把该诊断作为 Error，加载结果不会返回成功文档。
+
+## 规范化 DBC 导出
+
+`DbcWriter` 从不可变 `DbcDocument` 生成稳定、可重新加载 DBC 文本。该能力适用于新建、语义编辑后生成、CI 规范化导出，并以 reload 语义等价为验收目标。
+
+这是规范化导出，不是逐字节 round-trip 或原文件保格式编辑；不承诺保留原文件空白、语句顺序、未知语句或注释位置。需要供应商原文件未触碰内容尽量原样保留时，应使用后续独立的 source-aware 编辑能力，而不是把 `DbcWriter` 当作无损编辑器。
+
+```csharp
+var document = DbcLoader.LoadTextDocumentOrThrow(dbcText);
+var result = DbcWriter.WriteText(document);
+
+if (result.HasWarnings)
+{
+    Console.WriteLine(DbcDiagnosticFormatter.FormatGrouped(result.Diagnostics));
+}
+
+File.WriteAllText("normalized.dbc", result.GetTextOrThrow());
+```
+
+需要新建 DBC，或对加载后的语义模型做编辑再导出时，可以使用 `DbcDocumentBuilder`：
+
+```csharp
+var builder = DbcDocumentBuilder.Create();
+builder.AddNode("ECU");
+builder.AddNode("Tool");
+
+builder
+    .AddMessage(new DbcRawMessageId(256), "Status", 8, "ECU")
+    .AddSignal("Speed", 0, 16)
+    .WithScaling(0.1, 0)
+    .WithRange(0, 250)
+    .WithUnit("km/h")
+    .WithReceiver("Tool");
+
+var text = DbcWriter.WriteTextOrThrow(builder.Build());
+```
+
+Writer 会在可能导致 reload 后语义漂移的场景输出 `DBC_WRITE_*` diagnostics。`WriteText` 返回 `DbcWriteResult`，调用方可以先展示 diagnostics；`WriteTextOrThrow` 适合 CI 或工具链中把 Error 级问题直接作为失败处理。
 
 ## CAN ID 与 DBC 原始 ID
 

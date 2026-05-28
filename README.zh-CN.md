@@ -24,6 +24,8 @@ DiagKit.Dbc.slnx             解决方案
 - 提供 diagnostics 格式化/分组、`Errors` / `Warnings` 分类、`SignalPath`、`DbcSimpleRuntime` / `DbcSimpleChannel` 非热路径易用入口。
 - Node、Message、Signal、环境变量、值表、属性、复用信号和来源行号元数据。
 - 兼容 Vector `System*LongSymbol`，`Name` 默认使用完整名称，`SourceName` / `NameAliases` 保留 DBC 结构行短名。
+- 通过 `DbcWriter` 做规范化 DBC 导出，包含写出 diagnostics、Vector long-symbol 导出和 reload 语义等价测试覆盖。
+- 通过 `DbcDocumentBuilder` 新建或语义编辑文档，再交给 writer 导出。
 - CAN/CAN FD identifier、DLC、flags 和 timestamp 模型。
 - Intel/Motorola 信号 codec、raw/physical 转换和显式写入策略。
 - 面向接收处理、当前状态 snapshot 和信号样本流的 runtime session/channel。
@@ -42,6 +44,28 @@ DiagKit.Dbc.slnx             解决方案
 
 API 集成方式见 [API 使用指南](docs/API.zh-CN.md)。
 详见 [CanHub / 外部硬件适配边界](CANHUB-ADAPTER.zh-CN.md)。
+
+## 规范化 DBC 导出
+
+`DbcWriter` 从不可变 `DbcDocument` 生成稳定、可重新加载的 DBC 文本。它适用于新建、语义编辑后生成、CI 规范化导出，并以 reload 语义等价为目标。这是规范化导出，不是逐字节 round-trip 编辑；不承诺保留原文件空白、语句顺序、未知语句或注释位置。
+
+```csharp
+var document = DbcLoader.LoadTextDocumentOrThrow(dbcText);
+var result = DbcWriter.WriteText(document);
+File.WriteAllText("normalized.dbc", result.GetTextOrThrow());
+```
+
+需要新建或编辑 DBC 时可以先使用 `DbcDocumentBuilder`：
+
+```csharp
+var builder = DbcDocumentBuilder.Create();
+builder.AddNode("ECU");
+builder.AddMessage(new DbcRawMessageId(256), "Status", 8, "ECU")
+    .AddSignal("Speed", 0, 16)
+    .WithScaling(0.1, 0);
+
+var text = DbcWriter.WriteTextOrThrow(builder.Build());
+```
 
 ## 快速开始
 

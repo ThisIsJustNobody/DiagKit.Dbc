@@ -24,6 +24,8 @@ DiagKit.Dbc.slnx             Solution
 - Diagnostic formatting/grouping, `Errors` / `Warnings` helpers, `SignalPath`, and non-hot-path `DbcSimpleRuntime` / `DbcSimpleChannel` entry points.
 - Node, Message, Signal, environment variable, value table, attribute, multiplexing, and source-line metadata.
 - Vector `System*LongSymbol` compatibility: `Name` uses the full long symbol when present, while `SourceName` / `NameAliases` keep the structural short name usable.
+- Normalized DBC export through `DbcWriter`, with write diagnostics, Vector long-symbol output, and reload semantic equivalence checks.
+- Semantic `DbcDocumentBuilder` support for creating or editing documents before export.
 - CAN/CAN FD frame identifiers, DLC, flags, and timestamp models.
 - Intel/Motorola signal codec, raw/physical conversion, and explicit write policies.
 - Runtime sessions and channels for receive processing, current snapshots, and signal sample streams.
@@ -42,6 +44,28 @@ The core library does not depend on CanHub or any hardware SDK. Applications ada
 
 See [API usage guide](docs/API.zh-CN.md).
 See [CanHub / external hardware adapter boundary](CANHUB-ADAPTER.zh-CN.md).
+
+## Normalized DBC Export
+
+`DbcWriter` generates stable, reloadable DBC text from an immutable `DbcDocument`. It is intended for newly built documents, semantic edits, and CI normalized exports with reload semantic equivalence. It is normalized export, not byte-for-byte round-trip editing: original whitespace, statement order, unknown statements, and comment placement are not preserved.
+
+```csharp
+var document = DbcLoader.LoadTextDocumentOrThrow(dbcText);
+var result = DbcWriter.WriteText(document);
+File.WriteAllText("normalized.dbc", result.GetTextOrThrow());
+```
+
+Use `DbcDocumentBuilder` when creating or editing documents before export:
+
+```csharp
+var builder = DbcDocumentBuilder.Create();
+builder.AddNode("ECU");
+builder.AddMessage(new DbcRawMessageId(256), "Status", 8, "ECU")
+    .AddSignal("Speed", 0, 16)
+    .WithScaling(0.1, 0);
+
+var text = DbcWriter.WriteTextOrThrow(builder.Build());
+```
 
 ## Quick Start
 

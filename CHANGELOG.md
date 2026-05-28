@@ -2,6 +2,12 @@
 
 本文件记录项目的重要变更。包版本由 Git tag 通过 MinVer 自动生成；当前预览版本为 `1.1.0-preview.2`。
 
+## Unreleased
+
+- Added normalized DBC export through `DbcWriter`, including diagnostics and reload-equivalence coverage.
+- Added semantic `DbcDocumentBuilder` for creating or editing documents before export.
+- Documented that first-stage export is normalized and does not preserve original file formatting.
+
 ## 1.1.0-preview.2 - 2026-05-22
 
 ### 易用性升级

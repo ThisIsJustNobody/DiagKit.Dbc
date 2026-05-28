@@ -35,7 +35,7 @@
     <PackageIcon>diagkit-dbc.png</PackageIcon>
 
     <!-- Release -->
-    <PackageReleaseNotes>Preview 2 compatibility update: Vector long-symbol canonical names with short-name aliases, environment-variable attributes, alias-aware lookup diagnostics, restored MSTest discovery, and documented API entry layers.</PackageReleaseNotes>
+    <PackageReleaseNotes>Preview compatibility update: normalized DBC writer, semantic document builder, write diagnostics, reload equivalence tests, Vector long-symbol export, and documentation for non-round-trip export boundaries.</PackageReleaseNotes>
 
     <!-- URL -->
     <PackageProjectUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc</PackageProjectUrl>
