@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace DiagKit.Dbc;
@@ -37,6 +38,7 @@ internal static partial class DbcWriteValidator
         foreach (var variable in document.EnvironmentVariables.Values)
         {
             ValidateLongSymbolExport("Environment variable", variable.Name, DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options), diagnostics);
+            ValidateEnvironmentVariable(variable, diagnostics);
             ValidateAttributeValues("Environment variable", variable.Name, variable.Attributes, document, diagnostics);
             foreach (var accessNode in variable.AccessNodes)
             {
@@ -219,6 +221,10 @@ internal static partial class DbcWriteValidator
         foreach (var definition in document.AttributeDefinitions.Values)
         {
             ValidateLongSymbolAttributeName("Attribute definition", definition.Name, diagnostics);
+            if (definition.DefaultValue is not null)
+            {
+                ValidateAttributeValue("Attribute default", "network", definition.DefaultValue, definition, diagnostics);
+            }
         }
 
         ValidateAttributeValues("Document", "network", document.Attributes, document, diagnostics);
@@ -263,17 +269,28 @@ internal static partial class DbcWriteValidator
             AddUnsupportedMetadata($"Message '{message.Name}' timeout metadata is not backed by a matching GenMsgTimeoutTime attribute.", diagnostics);
         }
 
-        var unsupportedFrameFlags = message.FrameFlags & UnsupportedFrameFlags;
-        if (message.DataLength <= 8 &&
-            (message.FrameFlags & DbcFrameFlags.FlexibleDataRate) != 0 &&
-            !HasCanFdFrameFormatAttribute(message))
-        {
-            unsupportedFrameFlags |= DbcFrameFlags.FlexibleDataRate;
-        }
+        ValidateFlexibleDataRateMetadata(message, diagnostics);
 
+        var unsupportedFrameFlags = message.FrameFlags & UnsupportedFrameFlags;
         if (unsupportedFrameFlags != DbcFrameFlags.None)
         {
             AddUnsupportedMetadata($"Message '{message.Name}' frame flags '{unsupportedFrameFlags}' are not supported by the current normalized export.", diagnostics);
+        }
+    }
+
+    private static void ValidateFlexibleDataRateMetadata(DbcMessage message, List<DbcDiagnostic> diagnostics)
+    {
+        var frameFlagsHaveFlexibleDataRate = (message.FrameFlags & DbcFrameFlags.FlexibleDataRate) != 0;
+        var lengthAutomaticallyRestoresFlexibleDataRate = message.DataLength is > 8 and <= 64;
+        var attributeHasFlexibleDataRate = message.Attributes.TryGetValue("VFrameFormat", out var frameFormatAttribute) &&
+            IsCanFdFrameFormat(frameFormatAttribute);
+
+        if (frameFlagsHaveFlexibleDataRate && !lengthAutomaticallyRestoresFlexibleDataRate && !attributeHasFlexibleDataRate ||
+            !frameFlagsHaveFlexibleDataRate && attributeHasFlexibleDataRate)
+        {
+            AddUnsupportedMetadata(
+                $"Message '{message.Name}' FlexibleDataRate flag is not consistent with its VFrameFormat attribute and would not reload equivalently.",
+                diagnostics);
         }
     }
 
@@ -345,12 +362,108 @@ internal static partial class DbcWriteValidator
 
             if (document.AttributeDefinitions.ContainsKey(attribute.Name))
             {
+                ValidateAttributeValue(objectKind, objectName, attribute, document.AttributeDefinitions[attribute.Name], diagnostics);
                 continue;
             }
 
             AddUnsupportedMetadata(
                 $"{objectKind} '{objectName}' attribute '{attribute.Name}' has no BA_DEF_ definition and would not reload equivalently.",
                 diagnostics);
+        }
+    }
+
+    private static void ValidateAttributeValue(
+        string objectKind,
+        string objectName,
+        DbcAttributeValue value,
+        DbcAttributeDefinition definition,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (value.ValueKind != definition.ValueKind)
+        {
+            diagnostics.Add(Error(
+                "DBC_WRITE_INVALID_ATTRIBUTE_VALUE",
+                $"{objectKind} '{objectName}' attribute '{value.Name}' kind '{value.ValueKind}' does not match its definition kind '{definition.ValueKind}'."));
+            return;
+        }
+
+        switch (definition.ValueKind)
+        {
+            case DbcAttributeValueKind.Integer:
+                if (!long.TryParse(value.RawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+
+                break;
+            case DbcAttributeValueKind.Hex:
+                if (!TryParseHexOrDecimalInteger(value.RawValue))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+
+                break;
+            case DbcAttributeValueKind.Float:
+                if (!double.TryParse(value.RawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ||
+                    !double.IsFinite(parsed))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+
+                break;
+            case DbcAttributeValueKind.Enum:
+                if (!IsValidEnumAttributeValue(value.RawValue, definition.EnumValues))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+
+                break;
+        }
+    }
+
+    private static bool TryParseHexOrDecimalInteger(string rawValue)
+    {
+        if (rawValue.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return ulong.TryParse(rawValue[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _);
+        }
+
+        return long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+    }
+
+    private static bool IsValidEnumAttributeValue(string rawValue, IReadOnlyList<string> enumValues)
+    {
+        if (int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index))
+        {
+            return index >= 0 && index < enumValues.Count;
+        }
+
+        return enumValues.Contains(rawValue, StringComparer.Ordinal);
+    }
+
+    private static void AddInvalidAttributeValue(
+        string objectKind,
+        string objectName,
+        string attributeName,
+        string rawValue,
+        List<DbcDiagnostic> diagnostics)
+    {
+        diagnostics.Add(Error(
+            "DBC_WRITE_INVALID_ATTRIBUTE_VALUE",
+            $"{objectKind} '{objectName}' attribute '{attributeName}' raw value '{rawValue}' is not valid for normalized DBC export."));
+    }
+
+    private static void ValidateEnvironmentVariable(DbcEnvironmentVariable variable, List<DbcDiagnostic> diagnostics)
+    {
+        if (!double.IsFinite(variable.Minimum) ||
+            !double.IsFinite(variable.Maximum) ||
+            !double.IsFinite(variable.InitialValue) ||
+            string.IsNullOrWhiteSpace(variable.AccessType) ||
+            variable.AccessType.Any(char.IsWhiteSpace))
+        {
+            diagnostics.Add(Error(
+                "DBC_WRITE_INVALID_ENVIRONMENT_VARIABLE",
+                $"Environment variable '{variable.Name}' contains EV_ values that cannot be emitted as reloadable DBC text."));
         }
     }
 
