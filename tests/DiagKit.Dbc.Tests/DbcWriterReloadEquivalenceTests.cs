@@ -82,4 +82,30 @@ public sealed class DbcWriterReloadEquivalenceTests
         Assert.AreEqual(1, speed.Offset);
         Assert.AreEqual("km/h", speed.Unit);
     }
+
+    [TestMethod]
+    public void WriteText_LoadText_PreservesEmptySignalReceivers()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(768),
+                    "NoReceiverStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Spare", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [])]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+        StringAssert.Contains(text, " SG_ Spare : 0|8@1+ (1,0) [0|255] \"\" Vector__XXX");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+
+        Assert.AreEqual(1, reloaded.Nodes.Count);
+        Assert.IsFalse(reloaded.TryResolveNode("Vector__XXX", out _));
+        var signal = reloaded.ResolveMessage("NoReceiverStatus").ResolveSignal("Spare");
+        Assert.AreEqual(0, signal.Receivers.Count);
+    }
 }

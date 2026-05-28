@@ -123,8 +123,8 @@ public static class DbcWriter
     {
         return options.SortMode == DbcWriterSortMode.Stable
             ? document.Messages
-                .OrderBy(message => DbcWriterNameFormatter.GetMessageExportName(message, options), StringComparer.Ordinal)
-                .ThenBy(message => message.RawId.Value)
+                .OrderBy(message => message.RawId.Value)
+                .ThenBy(message => DbcWriterNameFormatter.GetMessageExportName(message, options), StringComparer.Ordinal)
             : document.Messages;
     }
 

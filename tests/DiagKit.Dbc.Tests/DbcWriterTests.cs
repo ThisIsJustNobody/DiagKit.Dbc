@@ -227,6 +227,32 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
+    public void WriteText_StableSortMode_OrdersMessagesByRawIdThenExportName()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(new DbcRawMessageId(300), "AHighId", 8, ecu, []),
+                new DbcMessage(new DbcRawMessageId(100), "ZLowId", 8, ecu, []),
+                new DbcMessage(new DbcRawMessageId(200), "MMidId", 8, ecu, []),
+            ]);
+        var options = new DbcWriterOptions
+        {
+            SortMode = DbcWriterSortMode.Stable,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        Assert.IsTrue(
+            text.IndexOf("BO_ 100 ZLowId: 8 ECU", StringComparison.Ordinal) <
+            text.IndexOf("BO_ 200 MMidId: 8 ECU", StringComparison.Ordinal));
+        Assert.IsTrue(
+            text.IndexOf("BO_ 200 MMidId: 8 ECU", StringComparison.Ordinal) <
+            text.IndexOf("BO_ 300 AHighId: 8 ECU", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void WriteText_ExtendedMultiplexing_ReturnsUnsupportedMultiplexingError()
     {
         var ecu = new DbcNode("ECU");
