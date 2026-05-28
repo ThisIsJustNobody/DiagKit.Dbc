@@ -30,7 +30,7 @@ internal static partial class DbcWriteValidator
             ValidateLongSymbolExport("Message", message.Name, DbcWriterNameFormatter.GetMessageExportName(message, options), diagnostics);
             ValidateMessageMetadata(message, diagnostics);
 
-            if (HasUnsupportedTransmitters(message, options))
+            if (HasUnsupportedTransmitters(message))
             {
                 diagnostics.Add(Error(
                     "DBC_WRITE_UNSUPPORTED_ADDITIONAL_TRANSMITTERS",
@@ -83,16 +83,14 @@ internal static partial class DbcWriteValidator
         return new DbcValidationResult(diagnostics);
     }
 
-    private static bool HasUnsupportedTransmitters(DbcMessage message, DbcWriterOptions options)
+    private static bool HasUnsupportedTransmitters(DbcMessage message)
     {
         if (message.Transmitters.Count != 1)
         {
             return true;
         }
 
-        var primaryName = DbcWriterNameFormatter.GetNodeExportName(message.PrimaryTransmitter, options);
-        var transmitterName = DbcWriterNameFormatter.GetNodeExportName(message.Transmitters[0], options);
-        return !string.Equals(primaryName, transmitterName, StringComparison.Ordinal);
+        return !ReferenceEquals(message.Transmitters[0], message.PrimaryTransmitter);
     }
 
     private static void ValidateDocumentMetadata(DbcDocument document, List<DbcDiagnostic> diagnostics)

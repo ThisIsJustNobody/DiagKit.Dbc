@@ -306,8 +306,21 @@ public sealed class DbcWriterTests
                     [],
                     transmitters: [tool]),
             ]);
+        var sameNamePrimary = new DbcNode("ECU");
+        var sameNameDifferentInstanceTransmitter = new DbcNode("ECU", comment: "not the primary transmitter object");
+        var sameNameDifferentInstanceDocument = new DbcDocument(
+            [sameNamePrimary],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(768),
+                    "SameNameStatus",
+                    8,
+                    sameNamePrimary,
+                    [],
+                    transmitters: [sameNameDifferentInstanceTransmitter]),
+            ]);
 
-        foreach (var document in new[] { additionalTransmittersDocument, mismatchedTransmitterDocument })
+        foreach (var document in new[] { additionalTransmittersDocument, mismatchedTransmitterDocument, sameNameDifferentInstanceDocument })
         {
             var result = DbcWriter.WriteText(document);
 
