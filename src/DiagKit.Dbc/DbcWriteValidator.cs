@@ -61,7 +61,7 @@ internal static partial class DbcWriteValidator
         {
             ValidateLongSymbolExport("Environment variable", variable.Name, DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options), diagnostics);
             ValidateEnvironmentVariable(variable, diagnostics);
-            ValidateAttributeValues("Environment variable", variable.Name, variable.Attributes, document, diagnostics);
+            ValidateAttributeValues("Environment variable", variable.Name, variable.Name, variable.Attributes, document, diagnostics);
             foreach (var accessNode in variable.AccessNodes)
             {
                 var accessNodeName = DbcWriterNameFormatter.GetNodeExportName(accessNode, options);
@@ -342,7 +342,7 @@ internal static partial class DbcWriteValidator
             }
         }
 
-        ValidateAttributeValues("Document", "network", document.Attributes, document, diagnostics);
+        ValidateAttributeValues("Document", "network", "network", document.Attributes, document, diagnostics);
         ValidateRelationMetadata(document, diagnostics);
     }
 
@@ -558,7 +558,7 @@ internal static partial class DbcWriteValidator
 
         if (node.Attributes.Count > 0)
         {
-            ValidateAttributeValues("Node", node.Name, node.Attributes, document, diagnostics);
+            ValidateAttributeValues("Node", node.Name, node.Name, node.Attributes, document, diagnostics);
         }
 
         ValidateOptionalQuotedText("Node", node.Name, "comment", node.Comment, diagnostics);
@@ -566,7 +566,7 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateMessageMetadata(DbcMessage message, DbcDocument document, List<DbcDiagnostic> diagnostics)
     {
-        ValidateAttributeValues("Message", message.Name, message.Attributes, document, diagnostics);
+        ValidateAttributeValues("Message", message.Name, message.Name, message.Attributes, document, diagnostics);
         ValidateOptionalQuotedText("Message", message.Name, "comment", message.Comment, diagnostics);
 
         if (message.CycleTimeMs.HasValue &&
@@ -614,7 +614,7 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateSignalMetadata(DbcMessage message, DbcSignal signal, DbcDocument document, List<DbcDiagnostic> diagnostics)
     {
-        ValidateAttributeValues("Signal", $"{message.Name}.{signal.Name}", signal.Attributes, document, diagnostics);
+        ValidateAttributeValues("Signal", $"{message.Name}.{signal.Name}", signal.Name, signal.Attributes, document, diagnostics);
         ValidateOptionalQuotedText("Signal", $"{message.Name}.{signal.Name}", "comment", signal.Comment, diagnostics);
         foreach (var valueDescription in signal.ValueDescriptions)
         {
@@ -675,28 +675,29 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateAttributeValues(
         string objectKind,
-        string objectName,
+        string objectDisplayName,
+        string canonicalObjectName,
         IReadOnlyDictionary<string, DbcAttributeValue> attributes,
         DbcDocument document,
         List<DbcDiagnostic> diagnostics)
     {
         foreach (var attribute in attributes.Values)
         {
-            ValidateQuotedText($"{objectKind} '{objectName}' attribute", attribute.Name, "name", attribute.Name, diagnostics);
+            ValidateQuotedText($"{objectKind} '{objectDisplayName}' attribute", attribute.Name, "name", attribute.Name, diagnostics);
             if (IsLongSymbolAttributeName(attribute.Name))
             {
-                ValidateLongSymbolAttributeValue(objectKind, objectName, attribute, diagnostics);
+                ValidateLongSymbolAttributeValue(objectKind, objectDisplayName, canonicalObjectName, attribute, diagnostics);
                 continue;
             }
 
             if (document.AttributeDefinitions.ContainsKey(attribute.Name))
             {
-                ValidateAttributeValue(objectKind, objectName, attribute, document.AttributeDefinitions[attribute.Name], diagnostics);
+                ValidateAttributeValue(objectKind, objectDisplayName, attribute, document.AttributeDefinitions[attribute.Name], diagnostics);
                 continue;
             }
 
             AddUnsupportedMetadata(
-                $"{objectKind} '{objectName}' attribute '{attribute.Name}' has no BA_DEF_ definition and would not reload equivalently.",
+                $"{objectKind} '{objectDisplayName}' attribute '{attribute.Name}' has no BA_DEF_ definition and would not reload equivalently.",
                 diagnostics);
         }
     }
@@ -950,28 +951,25 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateLongSymbolAttributeValue(
         string objectKind,
-        string objectName,
+        string objectDisplayName,
+        string canonicalObjectName,
         DbcAttributeValue attribute,
         List<DbcDiagnostic> diagnostics)
     {
         var expectedAttributeName = GetExpectedLongSymbolAttributeName(objectKind);
-        var separatorIndex = objectName.LastIndexOf('.');
-        var expectedValue = string.Equals(objectKind, "Signal", StringComparison.Ordinal) && separatorIndex >= 0
-            ? objectName[(separatorIndex + 1)..]
-            : objectName;
         if (!string.Equals(attribute.Name, expectedAttributeName, StringComparison.Ordinal) ||
             attribute.ValueKind != DbcAttributeValueKind.String ||
-            !string.Equals(attribute.RawValue, expectedValue, StringComparison.Ordinal) ||
+            !string.Equals(attribute.RawValue, canonicalObjectName, StringComparison.Ordinal) ||
             attribute.Value is not string stringValue ||
-            !string.Equals(stringValue, expectedValue, StringComparison.Ordinal))
+            !string.Equals(stringValue, canonicalObjectName, StringComparison.Ordinal))
         {
             diagnostics.Add(Error(
                 "DBC_WRITE_LONG_SYMBOL_CONFLICT",
-                $"{objectKind} '{objectName}' attribute '{attribute.Name}' conflicts with its canonical name."));
+                $"{objectKind} '{objectDisplayName}' attribute '{attribute.Name}' conflicts with its canonical name."));
             return;
         }
 
-        ValidateQuotedText(objectKind, objectName, "Vector long-symbol name", expectedValue, diagnostics);
+        ValidateQuotedText(objectKind, objectDisplayName, "Vector long-symbol name", canonicalObjectName, diagnostics);
     }
 
     private static string? GetExpectedLongSymbolAttributeName(string objectKind)

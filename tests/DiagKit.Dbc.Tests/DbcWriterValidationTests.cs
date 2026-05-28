@@ -96,6 +96,49 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
+    public void WriteText_SignalLongSymbolValueWithDottedCanonicalName_SucceedsAndReloadsAliases()
+    {
+        var ecu = new DbcNode("ECU");
+        var signal = new DbcSignal(
+            "Powertrain.Vehicle.Speed",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [ecu],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["SystemSignalLongSymbol"] = new("SystemSignalLongSymbol", DbcAttributeValueKind.String, "Powertrain.Vehicle.Speed", "Powertrain.Vehicle.Speed"),
+            },
+            sourceName: "VehSpdShort");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(258),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [signal]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var text = result.GetTextOrThrow();
+        StringAssert.Contains(text, "BA_ \"SystemSignalLongSymbol\" SG_ 258 VehSpdShort \"Powertrain.Vehicle.Speed\";");
+        var reloadedMessage = DbcLoader.LoadTextDocumentOrThrow(text).ResolveMessage("VehicleStatus");
+        var reloadedSignal = reloadedMessage.ResolveSignal("Powertrain.Vehicle.Speed");
+        Assert.AreEqual("Powertrain.Vehicle.Speed", reloadedSignal.Name);
+        Assert.IsTrue(reloadedMessage.TryResolveSignal("VehSpdShort", out _));
+    }
+
+    [TestMethod]
     public void WriteText_VectorLongSymbolAttributeValues_ConflictingExplicitValueReturnsConflictError()
     {
         var ecu = new DbcNode(
