@@ -393,6 +393,26 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
+    public void WriteText_EnumNumericRawOutsideIndexWithMatchingRawValue_Succeeds()
+    {
+        var document = new DbcDocument(
+            [new DbcNode("ECU")],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["Mode"] = new("Mode", DbcAttributeOwnerKind.Network, DbcAttributeValueKind.Enum, ["1"]),
+            },
+            new Dictionary<string, DbcAttributeValue>
+            {
+                ["Mode"] = new("Mode", DbcAttributeValueKind.Enum, "1", "1"),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+    }
+
+    [TestMethod]
     public void WriteText_EnumNumericRawWithMismatchedValue_ReturnsInvalidAttributeValueError()
     {
         var cases = new[]

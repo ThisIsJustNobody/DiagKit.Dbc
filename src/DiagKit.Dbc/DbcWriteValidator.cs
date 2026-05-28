@@ -770,19 +770,10 @@ internal static partial class DbcWriteValidator
                 expectedValue = enumValues[index];
                 return true;
             }
-
-            expectedValue = string.Empty;
-            return false;
         }
 
-        if (enumValues.Contains(rawValue, StringComparer.Ordinal))
-        {
-            expectedValue = rawValue;
-            return true;
-        }
-
-        expectedValue = string.Empty;
-        return false;
+        expectedValue = rawValue;
+        return true;
     }
 
     private static bool IsNumericAttributeRawValue(string rawValue)
