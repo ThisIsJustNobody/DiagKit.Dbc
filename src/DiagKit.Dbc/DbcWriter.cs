@@ -211,7 +211,7 @@ public static class DbcWriter
             return "Vector__XXX";
         }
 
-        return string.Join(" ", receivers.Select(receiver => DbcWriterNameFormatter.GetNodeExportName(receiver, options)));
+        return string.Join(",", receivers.Select(receiver => DbcWriterNameFormatter.GetNodeExportName(receiver, options)));
     }
 
     private static string FormatNumber(double value)

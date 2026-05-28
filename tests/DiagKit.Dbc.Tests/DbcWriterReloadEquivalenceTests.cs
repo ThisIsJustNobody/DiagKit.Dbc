@@ -19,6 +19,7 @@ public sealed class DbcWriterReloadEquivalenceTests
                     [
                         new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.1, 0, 0, 250, "km/h", [tool]),
                         new DbcSignal("Gear", 16, 8, DbcByteOrder.Intel, DbcSignalValueType.Signed, 1, -1, -1, 8, "", [tool]),
+                        new DbcSignal("Status", 24, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu, tool]),
                     ]),
             ]);
 
@@ -41,6 +42,11 @@ public sealed class DbcWriterReloadEquivalenceTests
         var gear = message.ResolveSignal("Gear");
         Assert.AreEqual(DbcSignalValueType.Signed, gear.ValueType);
         Assert.AreEqual(-1, gear.Offset);
+
+        var status = message.ResolveSignal("Status");
+        Assert.AreEqual(2, status.Receivers.Count);
+        Assert.AreEqual("ECU", status.Receivers[0].Name);
+        Assert.AreEqual("Tool", status.Receivers[1].Name);
     }
 
     [TestMethod]

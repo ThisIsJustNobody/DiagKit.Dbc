@@ -131,6 +131,7 @@ public sealed class DbcWriterTests
                     [
                         new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.1, 0, 0, 250, "km/h", [tool]),
                         new DbcSignal("Gear", 16, 8, DbcByteOrder.Intel, DbcSignalValueType.Signed, 1, -1, -1, 8, "", [tool]),
+                        new DbcSignal("Status", 24, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu, tool]),
                     ]),
             ]);
 
@@ -140,6 +141,7 @@ public sealed class DbcWriterTests
         StringAssert.Contains(text, "BO_ 256 VehicleStatus: 8 ECU");
         StringAssert.Contains(text, " SG_ Speed : 0|16@1+ (0.10000000000000001,0) [0|250] \"km/h\" Tool");
         StringAssert.Contains(text, " SG_ Gear : 16|8@1- (1,-1) [-1|8] \"\" Tool");
+        StringAssert.Contains(text, " SG_ Status : 24|8@1+ (1,0) [0|15] \"\" ECU,Tool");
     }
 
     [TestMethod]
