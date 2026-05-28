@@ -303,22 +303,10 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
-    public void WriteText_AdditionalTransmitters_ReturnsUnsupportedAdditionalTransmittersError()
+    public void WriteText_TransmittersWithoutPrimary_ReturnsUnsupportedAdditionalTransmittersError()
     {
         var ecu = new DbcNode("ECU");
         var tool = new DbcNode("Tool");
-        var additionalTransmittersDocument = new DbcDocument(
-            [ecu, tool],
-            [
-                new DbcMessage(
-                    new DbcRawMessageId(256),
-                    "VehicleStatus",
-                    8,
-                    ecu,
-                    [],
-                    transmitters: [ecu, tool]),
-            ]);
-
         var mismatchedTransmitterDocument = new DbcDocument(
             [ecu, tool],
             [
@@ -330,49 +318,21 @@ public sealed class DbcWriterTests
                     [],
                     transmitters: [tool]),
             ]);
-        var sameNamePrimary = new DbcNode("ECU");
-        var sameNameDifferentInstanceTransmitter = new DbcNode("ECU", comment: "not the primary transmitter object");
-        var sameNameDifferentInstanceDocument = new DbcDocument(
-            [sameNamePrimary],
-            [
-                new DbcMessage(
-                    new DbcRawMessageId(768),
-                    "SameNameStatus",
-                    8,
-                    sameNamePrimary,
-                    [],
-                    transmitters: [sameNameDifferentInstanceTransmitter]),
-            ]);
 
-        foreach (var document in new[] { additionalTransmittersDocument, mismatchedTransmitterDocument, sameNameDifferentInstanceDocument })
-        {
-            var result = DbcWriter.WriteText(document);
+        var result = DbcWriter.WriteText(mismatchedTransmitterDocument);
 
-            Assert.IsFalse(result.Succeeded);
-            Assert.IsNull(result.Text);
-            var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_ADDITIONAL_TRANSMITTERS");
-            Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
-        }
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_ADDITIONAL_TRANSMITTERS");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
     }
 
     [TestMethod]
-    public void WriteText_UnsupportedMetadataOutsideTask3Scope_ReturnsUnsupportedMetadataError()
+    public void WriteText_MetadataWithoutRepresentingAttributes_ReturnsUnsupportedMetadataError()
     {
         var ecu = new DbcNode("ECU");
-        var attribute = new DbcAttributeValue("Metadata", DbcAttributeValueKind.String, "\"x\"", "x");
-        var environmentVariable = new DbcEnvironmentVariable("EnvStatus", 0, 0, 1, "", 0, 0, "DUMMY_NODE_VECTOR0", [ecu]);
         var metadataCases = new[]
         {
-            new DbcDocument([ecu], [], environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
-            {
-                [environmentVariable.Name] = environmentVariable,
-            }),
-            new DbcDocument(
-                [new DbcNode("AttributedNode", attributes: new Dictionary<string, DbcAttributeValue>
-                {
-                    [attribute.Name] = attribute,
-                })],
-                []),
             new DbcDocument(
                 [ecu],
                 [

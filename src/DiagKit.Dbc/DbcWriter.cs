@@ -109,6 +109,8 @@ public static class DbcWriter
 
         builder.Append(newline);
         AppendMessages(builder, document, options, newline);
+        AppendAdditionalTransmitters(builder, document, options, newline);
+        AppendEnvironmentVariables(builder, document, options, newline);
         AppendMetadata(builder, document, options, newline);
         return builder.ToString();
     }
@@ -198,9 +200,241 @@ public static class DbcWriter
     private static void AppendMetadata(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
     {
         AppendComments(builder, document, options, newline);
+        AppendAttributeDefinitions(builder, document, newline);
+        AppendAttributeDefaults(builder, document, newline);
+        AppendAttributeValues(builder, document, options, newline);
+        AppendRelationAttributes(builder, document, newline);
         AppendValueDescriptions(builder, document, options, newline);
         AppendSignalValueTypes(builder, document, options, newline);
         AppendExtendedMultiplexing(builder, document, options, newline);
+    }
+
+    private static void AppendAdditionalTransmitters(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        foreach (var message in EnumerateMessages(document, options))
+        {
+            var primaryName = DbcWriterNameFormatter.GetNodeExportName(message.PrimaryTransmitter, options);
+            var additionalTransmitters = message.Transmitters
+                .Select(transmitter => DbcWriterNameFormatter.GetNodeExportName(transmitter, options))
+                .Where(transmitterName => !string.Equals(transmitterName, primaryName, StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (additionalTransmitters.Length == 0)
+            {
+                continue;
+            }
+
+            builder.Append("BO_TX_BU_ ")
+                .Append(message.RawId.Value)
+                .Append(" : ")
+                .Append(string.Join(",", additionalTransmitters))
+                .Append(';')
+                .Append(newline);
+        }
+    }
+
+    private static void AppendEnvironmentVariables(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        foreach (var variable in EnumerateEnvironmentVariables(document, options))
+        {
+            builder.Append("EV_ ")
+                .Append(DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options))
+                .Append(" : ")
+                .Append(variable.ValueType.ToString(CultureInfo.InvariantCulture))
+                .Append(" [")
+                .Append(FormatNumber(variable.Minimum))
+                .Append('|')
+                .Append(FormatNumber(variable.Maximum))
+                .Append("] \"")
+                .Append(EscapeQuotedText(variable.Unit))
+                .Append("\" ")
+                .Append(FormatNumber(variable.InitialValue))
+                .Append(' ')
+                .Append(variable.Identifier.ToString(CultureInfo.InvariantCulture))
+                .Append(' ')
+                .Append(variable.AccessType);
+
+            if (variable.AccessNodes.Count > 0)
+            {
+                builder.Append(' ')
+                    .Append(string.Join(",", variable.AccessNodes.Select(node => DbcWriterNameFormatter.GetNodeExportName(node, options))));
+            }
+
+            builder.Append(';').Append(newline);
+        }
+    }
+
+    private static IEnumerable<DbcEnvironmentVariable> EnumerateEnvironmentVariables(DbcDocument document, DbcWriterOptions options)
+    {
+        return options.SortMode == DbcWriterSortMode.Stable
+            ? document.EnvironmentVariables.Values.OrderBy(variable => DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options), StringComparer.Ordinal)
+            : document.EnvironmentVariables.Values;
+    }
+
+    private static void AppendAttributeDefinitions(StringBuilder builder, DbcDocument document, string newline)
+    {
+        foreach (var definition in document.AttributeDefinitions.Values.OrderBy(definition => definition.Name, StringComparer.Ordinal))
+        {
+            builder.Append("BA_DEF_ ");
+            var ownerToken = GetOwnerToken(definition.OwnerKind);
+            if (ownerToken.Length > 0)
+            {
+                builder.Append(ownerToken).Append(' ');
+            }
+
+            builder.Append('"')
+                .Append(EscapeQuotedText(definition.Name))
+                .Append("\" ");
+            AppendAttributeType(builder, definition.ValueKind, definition.Minimum, definition.Maximum, definition.EnumValues);
+            builder.Append(';').Append(newline);
+        }
+    }
+
+    private static void AppendAttributeDefaults(StringBuilder builder, DbcDocument document, string newline)
+    {
+        foreach (var definition in document.AttributeDefinitions.Values.OrderBy(definition => definition.Name, StringComparer.Ordinal))
+        {
+            if (definition.DefaultValue is null)
+            {
+                continue;
+            }
+
+            builder.Append("BA_DEF_DEF_ \"")
+                .Append(EscapeQuotedText(definition.Name))
+                .Append("\" ")
+                .Append(FormatAttributeValue(definition.DefaultValue))
+                .Append(';')
+                .Append(newline);
+        }
+    }
+
+    private static void AppendAttributeValues(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        foreach (var value in document.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
+        {
+            builder.Append("BA_ \"")
+                .Append(EscapeQuotedText(value.Name))
+                .Append("\" ")
+                .Append(FormatAttributeValue(value))
+                .Append(';')
+                .Append(newline);
+        }
+
+        foreach (var node in GetAttributeNodes(document, options))
+        {
+            foreach (var value in node.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
+            {
+                builder.Append("BA_ \"")
+                    .Append(EscapeQuotedText(value.Name))
+                    .Append("\" BU_ ")
+                    .Append(DbcWriterNameFormatter.GetNodeExportName(node, options))
+                    .Append(' ')
+                    .Append(FormatAttributeValue(value))
+                    .Append(';')
+                    .Append(newline);
+            }
+        }
+
+        foreach (var message in EnumerateMessages(document, options))
+        {
+            foreach (var value in message.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
+            {
+                builder.Append("BA_ \"")
+                    .Append(EscapeQuotedText(value.Name))
+                    .Append("\" BO_ ")
+                    .Append(message.RawId.Value)
+                    .Append(' ')
+                    .Append(FormatAttributeValue(value))
+                    .Append(';')
+                    .Append(newline);
+            }
+
+            foreach (var signal in EnumerateSignals(message, options))
+            {
+                foreach (var value in signal.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
+                {
+                    builder.Append("BA_ \"")
+                        .Append(EscapeQuotedText(value.Name))
+                        .Append("\" SG_ ")
+                        .Append(message.RawId.Value)
+                        .Append(' ')
+                        .Append(DbcWriterNameFormatter.GetSignalExportName(signal, options))
+                        .Append(' ')
+                        .Append(FormatAttributeValue(value))
+                        .Append(';')
+                        .Append(newline);
+                }
+            }
+        }
+
+        foreach (var variable in EnumerateEnvironmentVariables(document, options))
+        {
+            foreach (var value in variable.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
+            {
+                builder.Append("BA_ \"")
+                    .Append(EscapeQuotedText(value.Name))
+                    .Append("\" EV_ ")
+                    .Append(DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options))
+                    .Append(' ')
+                    .Append(FormatAttributeValue(value))
+                    .Append(';')
+                    .Append(newline);
+            }
+        }
+    }
+
+    private static IEnumerable<DbcNode> GetAttributeNodes(DbcDocument document, DbcWriterOptions options)
+    {
+        var nodesByExportName = new Dictionary<string, DbcNode>(StringComparer.Ordinal);
+        foreach (var node in EnumerateReferencedNodes(document))
+        {
+            var exportName = DbcWriterNameFormatter.GetNodeExportName(node, options);
+            if (!nodesByExportName.TryGetValue(exportName, out var existingNode) ||
+                existingNode.Attributes.Count == 0 && node.Attributes.Count > 0)
+            {
+                nodesByExportName[exportName] = node;
+            }
+        }
+
+        return options.SortMode == DbcWriterSortMode.Stable
+            ? nodesByExportName.OrderBy(item => item.Key, StringComparer.Ordinal).Select(item => item.Value)
+            : nodesByExportName.Values;
+    }
+
+    private static void AppendRelationAttributes(StringBuilder builder, DbcDocument document, string newline)
+    {
+        foreach (var definition in document.RelationAttributeDefinitions.Values.OrderBy(definition => definition.Name, StringComparer.Ordinal))
+        {
+            builder.Append("BA_DEF_REL_ ")
+                .Append(definition.RelationKind)
+                .Append(" \"")
+                .Append(EscapeQuotedText(definition.Name))
+                .Append("\" ");
+            AppendAttributeType(builder, definition.ValueKind, definition.Minimum, definition.Maximum, definition.EnumValues);
+            builder.Append(';').Append(newline);
+        }
+
+        foreach (var item in document.RelationAttributeDefaults.Values.OrderBy(item => item.Name, StringComparer.Ordinal))
+        {
+            builder.Append("BA_DEF_DEF_REL_ \"")
+                .Append(EscapeQuotedText(item.Name))
+                .Append("\" ")
+                .Append(FormatRawMetadataValue(item.RawValue))
+                .Append(';')
+                .Append(newline);
+        }
+
+        foreach (var item in document.RelationAttributes)
+        {
+            builder.Append("BA_REL_ \"")
+                .Append(EscapeQuotedText(item.Name))
+                .Append("\" ")
+                .Append(item.Target)
+                .Append(' ')
+                .Append(FormatRawMetadataValue(item.RawValue))
+                .Append(';')
+                .Append(newline);
+        }
     }
 
     private static void AppendComments(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
@@ -285,12 +519,25 @@ public static class DbcWriter
         {
             yield return message.PrimaryTransmitter;
 
+            foreach (var transmitter in message.Transmitters)
+            {
+                yield return transmitter;
+            }
+
             foreach (var signal in message.Signals)
             {
                 foreach (var receiver in signal.Receivers)
                 {
                     yield return receiver;
                 }
+            }
+        }
+
+        foreach (var variable in document.EnvironmentVariables.Values)
+        {
+            foreach (var node in variable.AccessNodes)
+            {
+                yield return node;
             }
         }
     }
@@ -421,6 +668,70 @@ public static class DbcWriter
             : value.ToString("G17", CultureInfo.InvariantCulture);
     }
 
+    private static string GetOwnerToken(DbcAttributeOwnerKind ownerKind)
+    {
+        return ownerKind switch
+        {
+            DbcAttributeOwnerKind.Node => "BU_",
+            DbcAttributeOwnerKind.Message => "BO_",
+            DbcAttributeOwnerKind.Signal => "SG_",
+            DbcAttributeOwnerKind.EnvironmentVariable => "EV_",
+            _ => string.Empty,
+        };
+    }
+
+    private static void AppendAttributeType(
+        StringBuilder builder,
+        DbcAttributeValueKind valueKind,
+        double? minimum,
+        double? maximum,
+        IReadOnlyList<string> enumValues)
+    {
+        switch (valueKind)
+        {
+            case DbcAttributeValueKind.Integer:
+                builder.Append("INT ").Append(FormatNumber(minimum ?? 0)).Append(' ').Append(FormatNumber(maximum ?? 0));
+                break;
+            case DbcAttributeValueKind.Hex:
+                builder.Append("HEX ").Append(FormatNumber(minimum ?? 0)).Append(' ').Append(FormatNumber(maximum ?? 0));
+                break;
+            case DbcAttributeValueKind.Float:
+                builder.Append("FLOAT ").Append(FormatNumber(minimum ?? 0)).Append(' ').Append(FormatNumber(maximum ?? 0));
+                break;
+            case DbcAttributeValueKind.Enum:
+                builder.Append("ENUM ");
+                builder.Append(string.Join(",", enumValues.Select(value => "\"" + EscapeQuotedText(value) + "\"")));
+                break;
+            default:
+                builder.Append("STRING");
+                break;
+        }
+    }
+
+    private static string FormatAttributeValue(DbcAttributeValue value)
+    {
+        return value.ValueKind switch
+        {
+            DbcAttributeValueKind.String => "\"" + EscapeQuotedText(value.RawValue) + "\"",
+            DbcAttributeValueKind.Enum when IsNumericAttributeRawValue(value.RawValue) => value.RawValue,
+            DbcAttributeValueKind.Enum => "\"" + EscapeQuotedText(value.RawValue) + "\"",
+            _ => value.RawValue,
+        };
+    }
+
+    private static string FormatRawMetadataValue(string rawValue)
+    {
+        return IsNumericAttributeRawValue(rawValue) || DbcWriteValidator.IsValidIdentifier(rawValue)
+            ? rawValue
+            : "\"" + EscapeQuotedText(rawValue) + "\"";
+    }
+
+    private static bool IsNumericAttributeRawValue(string rawValue)
+    {
+        return double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ||
+            rawValue.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string EscapeQuotedText(string value)
     {
         return value
@@ -462,6 +773,17 @@ internal static class DbcWriterNameFormatter
             DbcWriteValidator.IsValidIdentifier(signal.Name)
                 ? signal.Name
                 : signal.SourceName;
+    }
+
+    internal static string GetEnvironmentVariableExportName(DbcEnvironmentVariable variable, DbcWriterOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(variable);
+        ArgumentNullException.ThrowIfNull(options);
+
+        return options.NameExportPolicy == DbcNameExportPolicy.UseCanonicalNamesWhenValid &&
+            DbcWriteValidator.IsValidIdentifier(variable.Name)
+                ? variable.Name
+                : variable.SourceName;
     }
 
     internal static bool TryResolveMultiplexorSignal(
