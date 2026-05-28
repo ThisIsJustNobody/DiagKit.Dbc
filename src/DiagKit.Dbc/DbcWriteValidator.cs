@@ -809,8 +809,16 @@ internal static partial class DbcWriteValidator
         bool useDefault,
         List<DbcDiagnostic> diagnostics)
     {
-        if (TryGetAttributeSendType(attributes, attributeName, out var attributeValue))
+        if (attributes.TryGetValue(attributeName, out var attribute))
         {
+            if (!TryGetSendType(attribute, out var attributeValue))
+            {
+                AddUnsupportedMetadata(
+                    $"{objectKind} '{objectName}' {semanticName} metadata would reload from unparseable {attributeName} attribute as Unknown.",
+                    diagnostics);
+                return;
+            }
+
             if (semanticValue != attributeValue)
             {
                 AddUnsupportedMetadata(
@@ -1284,12 +1292,17 @@ internal static partial class DbcWriteValidator
     {
         if (attributes.TryGetValue(name, out var attribute))
         {
-            var text = attribute.Value as string ?? attribute.RawValue;
-            return TryParseSendType(text, out sendType);
+            return TryGetSendType(attribute, out sendType);
         }
 
         sendType = DbcSendType.Unknown;
         return false;
+    }
+
+    private static bool TryGetSendType(DbcAttributeValue attribute, out DbcSendType sendType)
+    {
+        var text = attribute.Value as string ?? attribute.RawValue;
+        return TryParseSendType(text, out sendType);
     }
 
     private static bool TryGetDefaultSendType(DbcDocument document, string name, out DbcSendType sendType)

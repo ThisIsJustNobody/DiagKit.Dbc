@@ -974,6 +974,81 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
+    public void WriteText_UnparseableExplicitMessageSendTypeWithMatchingDefault_ReturnsUnsupportedMetadataError()
+    {
+        var ecu = new DbcNode("ECU");
+        var message = new DbcMessage(
+            new DbcRawMessageId(256),
+            "Status",
+            8,
+            ecu,
+            [],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["GenMsgSendType"] = new("GenMsgSendType", DbcAttributeValueKind.Enum, "bogus", "bogus"),
+            },
+            sendType: DbcSendType.Cyclic);
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["GenMsgSendType"] = new(
+                    "GenMsgSendType",
+                    DbcAttributeOwnerKind.Message,
+                    DbcAttributeValueKind.Enum,
+                    ["cyclic", "event"],
+                    defaultValue: new DbcAttributeValue("GenMsgSendType", DbcAttributeValueKind.Enum, "cyclic", "cyclic")),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_METADATA"));
+    }
+
+    [TestMethod]
+    public void WriteText_UnparseableExplicitSignalSendTypeWithMatchingDefault_ReturnsUnsupportedMetadataError()
+    {
+        var ecu = new DbcNode("ECU");
+        var signal = new DbcSignal(
+            "Speed",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [ecu],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["GenSigSendType"] = new("GenSigSendType", DbcAttributeValueKind.Enum, "bogus", "bogus"),
+            },
+            sendType: DbcSendType.OnWrite);
+        var message = new DbcMessage(new DbcRawMessageId(256), "Status", 8, ecu, [signal]);
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["GenSigSendType"] = new(
+                    "GenSigSendType",
+                    DbcAttributeOwnerKind.Signal,
+                    DbcAttributeValueKind.Enum,
+                    ["cyclic", "onWrite"],
+                    defaultValue: new DbcAttributeValue("GenSigSendType", DbcAttributeValueKind.Enum, "onWrite", "onWrite")),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_METADATA"));
+    }
+
+    [TestMethod]
     public void WriteText_MappedMetadataExplicitAttributeOrDefaultMatchingSemanticValue_Succeeds()
     {
         var ecu = new DbcNode("ECU");
