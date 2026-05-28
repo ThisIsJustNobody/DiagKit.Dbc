@@ -292,6 +292,105 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
+    public void WriteText_InvalidNumericAttributeDefinitionRanges_ReturnsInvalidAttributeDefinitionError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["MissingRange"] = new("MissingRange", DbcAttributeOwnerKind.Network, DbcAttributeValueKind.Integer),
+                ["NonFiniteRange"] = new("NonFiniteRange", DbcAttributeOwnerKind.Network, DbcAttributeValueKind.Float, minimum: double.NaN, maximum: double.PositiveInfinity),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_DEFINITION"));
+    }
+
+    [TestMethod]
+    public void WriteText_InvalidNumericRelationAttributeDefinitionRanges_ReturnsInvalidAttributeDefinitionError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["MissingRange"] = new("MissingRange", "BU_SG_REL_", DbcAttributeValueKind.Integer),
+                ["InvalidRange"] = new("InvalidRange", "BU_SG_REL_", DbcAttributeValueKind.Hex, minimum: 10, maximum: 1),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_DEFINITION"));
+    }
+
+    [TestMethod]
+    public void WriteText_InvalidRelationKind_ReturnsInvalidRelationMetadataError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationAttribute"] = new("RelationAttribute", "BU;SG_REL_", DbcAttributeValueKind.Integer, minimum: 0, maximum: 10),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_RELATION_METADATA"));
+    }
+
+    [TestMethod]
+    public void WriteText_RelationTargetWithSemicolon_ReturnsInvalidRelationMetadataError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationAttribute"] = new("RelationAttribute", "BU_SG_REL_", DbcAttributeValueKind.Integer, minimum: 0, maximum: 10),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("RelationAttribute", "BU_SG_REL_ ECU; 256 Speed", "5"),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_RELATION_METADATA"));
+    }
+
+    [TestMethod]
+    public void WriteText_RelationDefaultAndValueRawKindMismatch_ReturnsInvalidAttributeValueError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationAttribute"] = new("RelationAttribute", "BU_SG_REL_", DbcAttributeValueKind.Integer, minimum: 0, maximum: 10),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationAttribute"] = new("RelationAttribute", "abc"),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("RelationAttribute", "BU_SG_REL_ ECU 256 Speed", "abc"),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_VALUE"));
+    }
+
+    [TestMethod]
     public void WriteText_InvalidEnvironmentVariableNumbersOrAccessType_ReturnsInvalidEnvironmentVariableError()
     {
         var cases = new[]

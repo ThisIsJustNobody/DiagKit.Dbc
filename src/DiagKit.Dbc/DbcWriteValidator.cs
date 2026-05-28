@@ -221,6 +221,13 @@ internal static partial class DbcWriteValidator
         foreach (var definition in document.AttributeDefinitions.Values)
         {
             ValidateLongSymbolAttributeName("Attribute definition", definition.Name, diagnostics);
+            ValidateAttributeDefinition(
+                "Attribute definition",
+                definition.Name,
+                definition.ValueKind,
+                definition.Minimum,
+                definition.Maximum,
+                diagnostics);
             if (definition.DefaultValue is not null)
             {
                 ValidateAttributeValue("Attribute default", "network", definition.DefaultValue, definition, diagnostics);
@@ -228,6 +235,181 @@ internal static partial class DbcWriteValidator
         }
 
         ValidateAttributeValues("Document", "network", document.Attributes, document, diagnostics);
+        ValidateRelationMetadata(document, diagnostics);
+    }
+
+    private static void ValidateRelationMetadata(DbcDocument document, List<DbcDiagnostic> diagnostics)
+    {
+        foreach (var definition in document.RelationAttributeDefinitions.Values)
+        {
+            if (!IsValidIdentifier(definition.RelationKind))
+            {
+                diagnostics.Add(Error(
+                    "DBC_WRITE_INVALID_RELATION_METADATA",
+                    $"Relation attribute definition '{definition.Name}' relation kind '{definition.RelationKind}' is not a valid DBC relation token."));
+            }
+
+            ValidateAttributeDefinition(
+                "Relation attribute definition",
+                definition.Name,
+                definition.ValueKind,
+                definition.Minimum,
+                definition.Maximum,
+                diagnostics);
+        }
+
+        foreach (var item in document.RelationAttributeDefaults.Values)
+        {
+            if (!document.RelationAttributeDefinitions.TryGetValue(item.Name, out var definition))
+            {
+                AddUnsupportedMetadata($"Relation attribute default '{item.Name}' has no BA_DEF_REL_ definition and would not reload equivalently.", diagnostics);
+                continue;
+            }
+
+            ValidateRelationAttributeRawValue("Relation attribute default", "network", item.Name, item.RawValue, definition, diagnostics);
+        }
+
+        foreach (var item in document.RelationAttributes)
+        {
+            if (!IsSafeRelationTarget(item.Target))
+            {
+                diagnostics.Add(Error(
+                    "DBC_WRITE_INVALID_RELATION_METADATA",
+                    $"Relation attribute '{item.Name}' target '{item.Target}' contains text that cannot be emitted as reloadable DBC relation metadata."));
+            }
+
+            if (!document.RelationAttributeDefinitions.TryGetValue(item.Name, out var definition))
+            {
+                AddUnsupportedMetadata($"Relation attribute '{item.Name}' has no BA_DEF_REL_ definition and would not reload equivalently.", diagnostics);
+                continue;
+            }
+
+            ValidateRelationAttributeRawValue("Relation attribute", item.Target, item.Name, item.RawValue, definition, diagnostics);
+        }
+    }
+
+    private static void ValidateAttributeDefinition(
+        string definitionKind,
+        string name,
+        DbcAttributeValueKind valueKind,
+        double? minimum,
+        double? maximum,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (valueKind is DbcAttributeValueKind.String or DbcAttributeValueKind.Enum)
+        {
+            if (minimum.HasValue || maximum.HasValue)
+            {
+                AddInvalidAttributeDefinition(
+                    definitionKind,
+                    name,
+                    "non-numeric attribute definitions must not carry numeric range metadata.",
+                    diagnostics);
+            }
+
+            return;
+        }
+
+        if (!minimum.HasValue || !maximum.HasValue)
+        {
+            AddInvalidAttributeDefinition(
+                definitionKind,
+                name,
+                "numeric attribute definitions must include both minimum and maximum values.",
+                diagnostics);
+            return;
+        }
+
+        if (!double.IsFinite(minimum.Value) ||
+            !double.IsFinite(maximum.Value) ||
+            maximum.Value < minimum.Value)
+        {
+            AddInvalidAttributeDefinition(
+                definitionKind,
+                name,
+                "numeric attribute definitions must use a finite range where maximum is greater than or equal to minimum.",
+                diagnostics);
+            return;
+        }
+
+        if ((valueKind is DbcAttributeValueKind.Integer or DbcAttributeValueKind.Hex) &&
+            (!IsWholeNumber(minimum.Value) || !IsWholeNumber(maximum.Value)))
+        {
+            AddInvalidAttributeDefinition(
+                definitionKind,
+                name,
+                "integer and hex attribute definition ranges must be whole numbers.",
+                diagnostics);
+            return;
+        }
+
+        if (valueKind == DbcAttributeValueKind.Hex && minimum.Value < 0)
+        {
+            AddInvalidAttributeDefinition(
+                definitionKind,
+                name,
+                "hex attribute definition ranges must be non-negative.",
+                diagnostics);
+        }
+    }
+
+    private static void ValidateRelationAttributeRawValue(
+        string objectKind,
+        string objectName,
+        string attributeName,
+        string rawValue,
+        DbcRelationAttributeDefinition definition,
+        List<DbcDiagnostic> diagnostics)
+    {
+        var value = new DbcAttributeValue(attributeName, definition.ValueKind, rawValue, rawValue);
+        var attributeDefinition = new DbcAttributeDefinition(
+            definition.Name,
+            DbcAttributeOwnerKind.Network,
+            definition.ValueKind,
+            definition.EnumValues,
+            definition.Minimum,
+            definition.Maximum);
+        ValidateAttributeValue(objectKind, objectName, value, attributeDefinition, diagnostics);
+    }
+
+    private static bool IsWholeNumber(double value)
+    {
+        return value == Math.Truncate(value);
+    }
+
+    private static bool IsSafeRelationTarget(string target)
+    {
+        if (string.IsNullOrWhiteSpace(target) ||
+            !string.Equals(target.Trim(), target, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var previousWasSpace = false;
+        foreach (var character in target)
+        {
+            if (character is ';' or '"' or '\\' ||
+                char.IsControl(character) ||
+                char.IsWhiteSpace(character) && character != ' ')
+            {
+                return false;
+            }
+
+            if (character == ' ')
+            {
+                if (previousWasSpace)
+                {
+                    return false;
+                }
+
+                previousWasSpace = true;
+                continue;
+            }
+
+            previousWasSpace = false;
+        }
+
+        return true;
     }
 
     private static void ValidateNodeMetadataOnce(
@@ -451,6 +633,17 @@ internal static partial class DbcWriteValidator
         diagnostics.Add(Error(
             "DBC_WRITE_INVALID_ATTRIBUTE_VALUE",
             $"{objectKind} '{objectName}' attribute '{attributeName}' raw value '{rawValue}' is not valid for normalized DBC export."));
+    }
+
+    private static void AddInvalidAttributeDefinition(
+        string definitionKind,
+        string name,
+        string reason,
+        List<DbcDiagnostic> diagnostics)
+    {
+        diagnostics.Add(Error(
+            "DBC_WRITE_INVALID_ATTRIBUTE_DEFINITION",
+            $"{definitionKind} '{name}' is not valid for normalized DBC export: {reason}"));
     }
 
     private static void ValidateEnvironmentVariable(DbcEnvironmentVariable variable, List<DbcDiagnostic> diagnostics)
