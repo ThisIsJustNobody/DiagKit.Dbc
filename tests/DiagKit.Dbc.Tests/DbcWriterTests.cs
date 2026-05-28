@@ -141,4 +141,88 @@ public sealed class DbcWriterTests
         StringAssert.Contains(text, " SG_ Speed : 0|16@1+ (0.10000000000000001,0) [0|250] \"km/h\" Tool");
         StringAssert.Contains(text, " SG_ Gear : 16|8@1- (1,-1) [-1|8] \"\" Tool");
     }
+
+    [TestMethod]
+    public void WriteText_FloatAndDoubleSignals_ReturnsUnsupportedSignalValueTypeError()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Temperature", 0, 32, DbcByteOrder.Intel, DbcSignalValueType.Float, 1, 0, 0, 100, "degC", [ecu]),
+                        new DbcSignal("Energy", 32, 32, DbcByteOrder.Intel, DbcSignalValueType.Double, 1, 0, 0, 100, "kWh", [ecu]),
+                    ]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.AreEqual(2, result.Errors.Count(x => x.Code == "DBC_WRITE_UNSUPPORTED_SIGNAL_VALUE_TYPE"));
+    }
+
+    [TestMethod]
+    public void WriteText_NonFiniteSignalNumbers_ReturnsNonFiniteNumberError()
+    {
+        (string SignalName, double Factor, double Offset, double Minimum, double Maximum)[] cases =
+        {
+            ("BadFactor", double.NaN, 0, 0, 100),
+            ("BadOffset", 1, double.PositiveInfinity, 0, 100),
+            ("BadMinimum", 1, 0, double.NegativeInfinity, 100),
+            ("BadMaximum", 1, 0, 0, double.NaN),
+        };
+
+        foreach (var (signalName, factor, offset, minimum, maximum) in cases)
+        {
+            var ecu = new DbcNode("ECU");
+            var document = new DbcDocument(
+                [ecu],
+                [
+                    new DbcMessage(
+                        new DbcRawMessageId(256),
+                        "VehicleStatus",
+                        8,
+                        ecu,
+                        [new DbcSignal(signalName, 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, factor, offset, minimum, maximum, "", [ecu])]),
+                ]);
+
+            var result = DbcWriter.WriteText(document);
+
+            Assert.IsFalse(result.Succeeded, signalName);
+            Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_NON_FINITE_SIGNAL_NUMBER"), signalName);
+        }
+    }
+
+    [TestMethod]
+    public void WriteText_UseCanonicalNamesWhenValid_EmitsCanonicalMessageSignalAndNodeReferences()
+    {
+        var ecu = new DbcNode("CanonicalEcu", sourceName: "ECU");
+        var tool = new DbcNode("CanonicalTool", sourceName: "Tool");
+        var document = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "CanonicalStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool], sourceName: "SpeedShort")],
+                    sourceName: "StatusShort"),
+            ]);
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        StringAssert.Contains(text, "BU_: CanonicalEcu CanonicalTool");
+        StringAssert.Contains(text, "BO_ 256 CanonicalStatus: 8 CanonicalEcu");
+        StringAssert.Contains(text, " SG_ CanonicalSpeed : 0|16@1+ (1,0) [0|250] \"km/h\" CanonicalTool");
+    }
 }

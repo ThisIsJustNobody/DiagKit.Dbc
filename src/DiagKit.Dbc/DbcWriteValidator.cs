@@ -32,6 +32,8 @@ internal static partial class DbcWriteValidator
             ValidateObjectName($"signal in message '{message.Name}'", message.Signals.Select(x => DbcWriterNameFormatter.GetSignalExportName(x, options)), diagnostics);
             foreach (var signal in message.Signals)
             {
+                ValidateSignal(message, signal, diagnostics);
+
                 foreach (var receiver in signal.Receivers)
                 {
                     var receiverName = DbcWriterNameFormatter.GetNodeExportName(receiver, options);
@@ -44,6 +46,38 @@ internal static partial class DbcWriteValidator
         }
 
         return new DbcValidationResult(diagnostics);
+    }
+
+    private static void ValidateSignal(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
+    {
+        if (signal.ValueType is DbcSignalValueType.Float or DbcSignalValueType.Double)
+        {
+            diagnostics.Add(Error(
+                "DBC_WRITE_UNSUPPORTED_SIGNAL_VALUE_TYPE",
+                $"Signal '{message.Name}.{signal.Name}' uses {signal.ValueType}, but Task 2 normalized export does not emit SIG_VALTYPE_ yet."));
+        }
+
+        ValidateFiniteSignalNumber(message, signal, nameof(signal.Factor), signal.Factor, diagnostics);
+        ValidateFiniteSignalNumber(message, signal, nameof(signal.Offset), signal.Offset, diagnostics);
+        ValidateFiniteSignalNumber(message, signal, nameof(signal.Minimum), signal.Minimum, diagnostics);
+        ValidateFiniteSignalNumber(message, signal, nameof(signal.Maximum), signal.Maximum, diagnostics);
+    }
+
+    private static void ValidateFiniteSignalNumber(
+        DbcMessage message,
+        DbcSignal signal,
+        string fieldName,
+        double value,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (double.IsFinite(value))
+        {
+            return;
+        }
+
+        diagnostics.Add(Error(
+            "DBC_WRITE_NON_FINITE_SIGNAL_NUMBER",
+            $"Signal '{message.Name}.{signal.Name}' {fieldName} must be finite for normalized DBC export."));
     }
 
     internal static bool IsValidIdentifier(string value)

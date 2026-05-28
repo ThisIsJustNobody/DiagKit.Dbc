@@ -42,4 +42,44 @@ public sealed class DbcWriterReloadEquivalenceTests
         Assert.AreEqual(DbcSignalValueType.Signed, gear.ValueType);
         Assert.AreEqual(-1, gear.Offset);
     }
+
+    [TestMethod]
+    public void WriteText_LoadText_PreservesRegularMultiplexingSemantics()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(512),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [tool], DbcMultiplexing.Multiplexor),
+                        new DbcSignal("Speed", 8, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.5, 1, 0, 250, "km/h", [tool], DbcMultiplexing.Multiplexed(1)),
+                    ]),
+            ]);
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(DbcWriter.WriteTextOrThrow(original));
+
+        var message = reloaded.ResolveMessage("MuxStatus");
+        var mode = message.ResolveSignal("Mode");
+        Assert.AreEqual(DbcMultiplexingRole.Multiplexor, mode.Multiplexing.Role);
+        Assert.IsNull(mode.Multiplexing.SwitchValue);
+        Assert.AreEqual(0, mode.StartBit);
+        Assert.AreEqual(4, mode.BitLength);
+
+        var speed = message.ResolveSignal("Speed");
+        Assert.AreEqual(DbcMultiplexingRole.Multiplexed, speed.Multiplexing.Role);
+        Assert.AreEqual(1, speed.Multiplexing.SwitchValue);
+        Assert.AreEqual(8, speed.StartBit);
+        Assert.AreEqual(16, speed.BitLength);
+        Assert.AreEqual(DbcByteOrder.Intel, speed.ByteOrder);
+        Assert.AreEqual(DbcSignalValueType.Unsigned, speed.ValueType);
+        Assert.AreEqual(0.5, speed.Factor);
+        Assert.AreEqual(1, speed.Offset);
+        Assert.AreEqual("km/h", speed.Unit);
+    }
 }
