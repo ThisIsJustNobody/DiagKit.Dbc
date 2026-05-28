@@ -109,6 +109,7 @@ public static class DbcWriter
 
         builder.Append(newline);
         AppendMessages(builder, document, options, newline);
+        AppendMetadata(builder, document, options, newline);
         return builder.ToString();
     }
 
@@ -192,6 +193,166 @@ public static class DbcWriter
             .Append("\" ")
             .Append(FormatReceivers(signal.Receivers, options))
             .Append(newline);
+    }
+
+    private static void AppendMetadata(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        AppendComments(builder, document, options, newline);
+        AppendValueDescriptions(builder, document, options, newline);
+        AppendSignalValueTypes(builder, document, options, newline);
+        AppendExtendedMultiplexing(builder, document, options, newline);
+    }
+
+    private static void AppendComments(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        if (document.Comment is not null)
+        {
+            builder.Append("CM_ \"").Append(EscapeQuotedText(document.Comment)).Append("\";").Append(newline);
+        }
+
+        foreach (var node in GetNodes(document, options))
+        {
+            if (node.Comment is null)
+            {
+                continue;
+            }
+
+            builder.Append("CM_ BU_ ")
+                .Append(DbcWriterNameFormatter.GetNodeExportName(node, options))
+                .Append(" \"")
+                .Append(EscapeQuotedText(node.Comment))
+                .Append("\";")
+                .Append(newline);
+        }
+
+        foreach (var message in EnumerateMessages(document, options))
+        {
+            if (message.Comment is not null)
+            {
+                builder.Append("CM_ BO_ ")
+                    .Append(message.RawId.Value)
+                    .Append(" \"")
+                    .Append(EscapeQuotedText(message.Comment))
+                    .Append("\";")
+                    .Append(newline);
+            }
+
+            foreach (var signal in EnumerateSignals(message, options))
+            {
+                if (signal.Comment is null)
+                {
+                    continue;
+                }
+
+                builder.Append("CM_ SG_ ")
+                    .Append(message.RawId.Value)
+                    .Append(' ')
+                    .Append(DbcWriterNameFormatter.GetSignalExportName(signal, options))
+                    .Append(" \"")
+                    .Append(EscapeQuotedText(signal.Comment))
+                    .Append("\";")
+                    .Append(newline);
+            }
+        }
+    }
+
+    private static void AppendValueDescriptions(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        foreach (var message in EnumerateMessages(document, options))
+        {
+            foreach (var signal in EnumerateSignals(message, options))
+            {
+                if (signal.ValueDescriptions.Count == 0)
+                {
+                    continue;
+                }
+
+                builder.Append("VAL_ ")
+                    .Append(message.RawId.Value)
+                    .Append(' ')
+                    .Append(DbcWriterNameFormatter.GetSignalExportName(signal, options));
+
+                foreach (var valueDescription in signal.ValueDescriptions.OrderBy(item => item.Key))
+                {
+                    builder.Append(' ')
+                        .Append(valueDescription.Key.ToString(CultureInfo.InvariantCulture))
+                        .Append(" \"")
+                        .Append(EscapeQuotedText(valueDescription.Value))
+                        .Append('"');
+                }
+
+                builder.Append(';').Append(newline);
+            }
+        }
+    }
+
+    private static void AppendSignalValueTypes(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        foreach (var message in EnumerateMessages(document, options))
+        {
+            foreach (var signal in EnumerateSignals(message, options))
+            {
+                var typeCode = signal.ValueType switch
+                {
+                    DbcSignalValueType.Float => 1,
+                    DbcSignalValueType.Double => 2,
+                    _ => 0,
+                };
+
+                if (typeCode == 0)
+                {
+                    continue;
+                }
+
+                builder.Append("SIG_VALTYPE_ ")
+                    .Append(message.RawId.Value)
+                    .Append(' ')
+                    .Append(DbcWriterNameFormatter.GetSignalExportName(signal, options))
+                    .Append(" : ")
+                    .Append(typeCode)
+                    .Append(';')
+                    .Append(newline);
+            }
+        }
+    }
+
+    private static void AppendExtendedMultiplexing(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        foreach (var message in EnumerateMessages(document, options))
+        {
+            foreach (var signal in EnumerateSignals(message, options))
+            {
+                if (signal.Multiplexing.SwitchRanges.Count == 0 ||
+                    string.IsNullOrEmpty(signal.Multiplexing.MultiplexorSignalName) ||
+                    !message.TryResolveSignal(signal.Multiplexing.MultiplexorSignalName, out var multiplexor))
+                {
+                    continue;
+                }
+
+                builder.Append("SG_MUL_VAL_ ")
+                    .Append(message.RawId.Value)
+                    .Append(' ')
+                    .Append(DbcWriterNameFormatter.GetSignalExportName(signal, options))
+                    .Append(' ')
+                    .Append(DbcWriterNameFormatter.GetSignalExportName(multiplexor, options))
+                    .Append(' ');
+
+                for (var i = 0; i < signal.Multiplexing.SwitchRanges.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        builder.Append(", ");
+                    }
+
+                    var range = signal.Multiplexing.SwitchRanges[i];
+                    builder.Append(range.Minimum.ToString(CultureInfo.InvariantCulture))
+                        .Append('-')
+                        .Append(range.Maximum.ToString(CultureInfo.InvariantCulture));
+                }
+
+                builder.Append(';').Append(newline);
+            }
+        }
     }
 
     private static string GetMultiplexingToken(DbcMultiplexing multiplexing)

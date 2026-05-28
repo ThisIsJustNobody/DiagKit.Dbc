@@ -4,6 +4,186 @@ namespace DiagKit.Dbc.Tests;
 public sealed class DbcWriterReloadEquivalenceTests
 {
     [TestMethod]
+    public void WriteText_CommentsAndValueDescriptions_ReloadsEquivalentText()
+    {
+        var ecu = new DbcNode("CanonicalEcu", "node comment \\ \"quoted\"", sourceName: "ECU");
+        var tool = new DbcNode("CanonicalTool", sourceName: "Tool");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "CanonicalStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal(
+                            "CanonicalMode",
+                            0,
+                            8,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            3,
+                            "",
+                            [tool],
+                            valueDescriptions: new Dictionary<long, string>
+                            {
+                                [2] = "Drive \\ \"quoted\"",
+                                [0] = "Park",
+                                [1] = "Reverse",
+                            },
+                            comment: "signal comment \\ \"quoted\"",
+                            sourceName: "ModeShort"),
+                    ],
+                    comment: "message comment \\ \"quoted\"",
+                    sourceName: "StatusShort"),
+            ],
+            comment: "document comment \\ \"quoted\"");
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(original, options);
+
+        StringAssert.Contains(text, "CM_ \"document comment \\\\ \\\"quoted\\\"\";");
+        StringAssert.Contains(text, "CM_ BU_ CanonicalEcu \"node comment \\\\ \\\"quoted\\\"\";");
+        StringAssert.Contains(text, "CM_ BO_ 256 \"message comment \\\\ \\\"quoted\\\"\";");
+        StringAssert.Contains(text, "CM_ SG_ 256 CanonicalMode \"signal comment \\\\ \\\"quoted\\\"\";");
+        StringAssert.Contains(text, "VAL_ 256 CanonicalMode 0 \"Park\" 1 \"Reverse\" 2 \"Drive \\\\ \\\"quoted\\\"\";");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+
+        Assert.AreEqual("document comment \\ \"quoted\"", reloaded.Comment);
+        Assert.AreEqual("node comment \\ \"quoted\"", reloaded.ResolveNode("CanonicalEcu").Comment);
+        var message = reloaded.ResolveMessage("CanonicalStatus");
+        Assert.AreEqual("message comment \\ \"quoted\"", message.Comment);
+        var signal = message.ResolveSignal("CanonicalMode");
+        Assert.AreEqual("signal comment \\ \"quoted\"", signal.Comment);
+        Assert.AreEqual("Park", signal.ValueDescriptions[0]);
+        Assert.AreEqual("Reverse", signal.ValueDescriptions[1]);
+        Assert.AreEqual("Drive \\ \"quoted\"", signal.ValueDescriptions[2]);
+    }
+
+    [TestMethod]
+    public void WriteText_FloatAndDoubleSignals_EmitSigValTypeAndReloadEquivalentTypes()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(300),
+                    "FloatStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Temperature", 0, 32, DbcByteOrder.Intel, DbcSignalValueType.Float, 1, 0, -40, 215, "degC", [ecu]),
+                        new DbcSignal("Energy", 32, 32, DbcByteOrder.Intel, DbcSignalValueType.Double, 1, 0, 0, 1000, "kWh", [ecu]),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "SIG_VALTYPE_ 300 Temperature : 1;");
+        StringAssert.Contains(text, "SIG_VALTYPE_ 300 Energy : 2;");
+        var message = DbcLoader.LoadTextDocumentOrThrow(text).ResolveMessage("FloatStatus");
+        Assert.AreEqual(DbcSignalValueType.Float, message.ResolveSignal("Temperature").ValueType);
+        Assert.AreEqual(DbcSignalValueType.Double, message.ResolveSignal("Energy").ValueType);
+    }
+
+    [TestMethod]
+    public void WriteText_ExtendedMultiplexing_EmitsSgMulValAndReloadsRanges()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(400),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(1, 3), new DbcMultiplexorRange(5, 7)])),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "SG_MUL_VAL_ 400 Speed Mode 1-3, 5-7;");
+        var signal = DbcLoader.LoadTextDocumentOrThrow(text)
+            .ResolveMessage("MuxStatus")
+            .ResolveSignal("Speed");
+        Assert.AreEqual(DbcMultiplexingRole.Multiplexed, signal.Multiplexing.Role);
+        Assert.IsNull(signal.Multiplexing.SwitchValue);
+        Assert.AreEqual("Mode", signal.Multiplexing.MultiplexorSignalName);
+        CollectionAssert.AreEqual(
+            new[] { new DbcMultiplexorRange(1, 3), new DbcMultiplexorRange(5, 7) },
+            signal.Multiplexing.SwitchRanges.ToArray());
+    }
+
+    [TestMethod]
+    public void WriteText_BasicMultiplexingWithExtendedRanges_EmitsTokenAndSgMulVal()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(401),
+                    "MixedMuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed(2).WithExtendedRanges("Mode", [new DbcMultiplexorRange(4, 6)])),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, " SG_ Speed m2 : 8|16@1+ (1,0) [0|250] \"km/h\" ECU");
+        StringAssert.Contains(text, "SG_MUL_VAL_ 401 Speed Mode 4-6;");
+        var signal = DbcLoader.LoadTextDocumentOrThrow(text)
+            .ResolveMessage("MixedMuxStatus")
+            .ResolveSignal("Speed");
+        Assert.AreEqual(2, signal.Multiplexing.SwitchValue);
+        Assert.AreEqual("Mode", signal.Multiplexing.MultiplexorSignalName);
+        CollectionAssert.AreEqual(
+            new[] { new DbcMultiplexorRange(4, 6) },
+            signal.Multiplexing.SwitchRanges.ToArray());
+    }
+
+    [TestMethod]
     public void WriteText_LoadText_PreservesCoreMessageAndSignalSemantics()
     {
         var ecu = new DbcNode("ECU");

@@ -95,39 +95,34 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateDocumentMetadata(DbcDocument document, List<DbcDiagnostic> diagnostics)
     {
-        if (!string.IsNullOrEmpty(document.Comment))
-        {
-            AddUnsupportedMetadata("Document comment metadata is not supported by Task 2 normalized export.", diagnostics);
-        }
-
         if (document.AttributeDefinitions.Count > 0)
         {
-            AddUnsupportedMetadata("Document attribute definitions are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata("Document attribute definitions are not supported by the current normalized export.", diagnostics);
         }
 
         if (document.Attributes.Count > 0)
         {
-            AddUnsupportedMetadata("Document attribute values are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata("Document attribute values are not supported by the current normalized export.", diagnostics);
         }
 
         if (document.EnvironmentVariables.Count > 0)
         {
-            AddUnsupportedMetadata("Document environment variables are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata("Document environment variables are not supported by the current normalized export.", diagnostics);
         }
 
         if (document.RelationAttributeDefinitions.Count > 0)
         {
-            AddUnsupportedMetadata("Document relation attribute definitions are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata("Document relation attribute definitions are not supported by the current normalized export.", diagnostics);
         }
 
         if (document.RelationAttributeDefaults.Count > 0)
         {
-            AddUnsupportedMetadata("Document relation attribute defaults are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata("Document relation attribute defaults are not supported by the current normalized export.", diagnostics);
         }
 
         if (document.RelationAttributes.Count > 0)
         {
-            AddUnsupportedMetadata("Document relation attributes are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata("Document relation attributes are not supported by the current normalized export.", diagnostics);
         }
     }
 
@@ -141,42 +136,32 @@ internal static partial class DbcWriteValidator
             return;
         }
 
-        if (!string.IsNullOrEmpty(node.Comment))
-        {
-            AddUnsupportedMetadata($"Node '{node.Name}' comment metadata is not supported by Task 2 normalized export.", diagnostics);
-        }
-
         if (node.Attributes.Count > 0)
         {
-            AddUnsupportedMetadata($"Node '{node.Name}' attribute values are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Node '{node.Name}' attribute values are not supported by the current normalized export.", diagnostics);
         }
     }
 
     private static void ValidateMessageMetadata(DbcMessage message, List<DbcDiagnostic> diagnostics)
     {
-        if (!string.IsNullOrEmpty(message.Comment))
-        {
-            AddUnsupportedMetadata($"Message '{message.Name}' comment metadata is not supported by Task 2 normalized export.", diagnostics);
-        }
-
         if (message.Attributes.Count > 0)
         {
-            AddUnsupportedMetadata($"Message '{message.Name}' attribute values are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Message '{message.Name}' attribute values are not supported by the current normalized export.", diagnostics);
         }
 
         if (message.CycleTimeMs.HasValue)
         {
-            AddUnsupportedMetadata($"Message '{message.Name}' cycle time metadata is not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Message '{message.Name}' cycle time metadata is not supported by the current normalized export.", diagnostics);
         }
 
         if (message.SendType != DbcSendType.Unknown)
         {
-            AddUnsupportedMetadata($"Message '{message.Name}' send type metadata is not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Message '{message.Name}' send type metadata is not supported by the current normalized export.", diagnostics);
         }
 
         if (message.TimeoutTimeMs.HasValue)
         {
-            AddUnsupportedMetadata($"Message '{message.Name}' timeout metadata is not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Message '{message.Name}' timeout metadata is not supported by the current normalized export.", diagnostics);
         }
 
         var unsupportedFrameFlags = message.FrameFlags & UnsupportedFrameFlags;
@@ -187,40 +172,30 @@ internal static partial class DbcWriteValidator
 
         if (unsupportedFrameFlags != DbcFrameFlags.None)
         {
-            AddUnsupportedMetadata($"Message '{message.Name}' frame flags '{unsupportedFrameFlags}' are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Message '{message.Name}' frame flags '{unsupportedFrameFlags}' are not supported by the current normalized export.", diagnostics);
         }
     }
 
     private static void ValidateSignalMetadata(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
     {
-        if (!string.IsNullOrEmpty(signal.Comment))
-        {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' comment metadata is not supported by Task 2 normalized export.", diagnostics);
-        }
-
-        if (signal.ValueDescriptions.Count > 0)
-        {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' value descriptions are not supported by Task 2 normalized export.", diagnostics);
-        }
-
         if (signal.Attributes.Count > 0)
         {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' attribute values are not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' attribute values are not supported by the current normalized export.", diagnostics);
         }
 
         if (signal.InitialValue.HasValue)
         {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' initial value metadata is not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' initial value metadata is not supported by the current normalized export.", diagnostics);
         }
 
         if (signal.SendType != DbcSendType.Unknown)
         {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' send type metadata is not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' send type metadata is not supported by the current normalized export.", diagnostics);
         }
 
         if (signal.TimeoutTimeMs.HasValue)
         {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' timeout metadata is not supported by Task 2 normalized export.", diagnostics);
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' timeout metadata is not supported by the current normalized export.", diagnostics);
         }
     }
 
@@ -228,18 +203,11 @@ internal static partial class DbcWriteValidator
     {
         ValidateSignalBitRange(message, signal, diagnostics);
 
-        if (signal.ValueType is DbcSignalValueType.Float or DbcSignalValueType.Double)
-        {
-            diagnostics.Add(Error(
-                "DBC_WRITE_UNSUPPORTED_SIGNAL_VALUE_TYPE",
-                $"Signal '{message.Name}.{signal.Name}' uses {signal.ValueType}, but Task 2 normalized export does not emit SIG_VALTYPE_ yet."));
-        }
-
-        if (HasUnsupportedMultiplexing(signal.Multiplexing))
+        if (HasUnsupportedMultiplexing(message, signal))
         {
             diagnostics.Add(Error(
                 "DBC_WRITE_UNSUPPORTED_MULTIPLEXING",
-                $"Signal '{message.Name}.{signal.Name}' uses unsupported multiplexing for Task 2 normalized export."));
+                $"Signal '{message.Name}.{signal.Name}' uses unsupported multiplexing for the current normalized export."));
         }
 
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Factor), signal.Factor, diagnostics);
@@ -308,17 +276,50 @@ internal static partial class DbcWriteValidator
         return true;
     }
 
-    private static bool HasUnsupportedMultiplexing(DbcMultiplexing multiplexing)
+    private static bool HasUnsupportedMultiplexing(DbcMessage message, DbcSignal signal)
     {
+        var multiplexing = signal.Multiplexing;
         var hasExtendedFields = multiplexing.SwitchRanges.Count > 0 ||
             !string.IsNullOrEmpty(multiplexing.MultiplexorSignalName);
 
-        return multiplexing.Role switch
+        switch (multiplexing.Role)
         {
-            DbcMultiplexingRole.None or DbcMultiplexingRole.Multiplexor => multiplexing.SwitchValue is not null || hasExtendedFields,
-            DbcMultiplexingRole.Multiplexed => multiplexing.SwitchValue is not >= 0 || hasExtendedFields,
-            _ => true,
-        };
+            case DbcMultiplexingRole.None:
+            case DbcMultiplexingRole.Multiplexor:
+                return multiplexing.SwitchValue is not null || hasExtendedFields;
+            case DbcMultiplexingRole.Multiplexed:
+                return HasUnsupportedMultiplexedState(message, signal);
+            default:
+                return true;
+        }
+    }
+
+    private static bool HasUnsupportedMultiplexedState(DbcMessage message, DbcSignal signal)
+    {
+        var multiplexing = signal.Multiplexing;
+        if (multiplexing.SwitchValue is < 0)
+        {
+            return true;
+        }
+
+        if (multiplexing.SwitchValue is null && multiplexing.SwitchRanges.Count == 0)
+        {
+            return true;
+        }
+
+        if (multiplexing.SwitchRanges.Count == 0)
+        {
+            return !string.IsNullOrEmpty(multiplexing.MultiplexorSignalName);
+        }
+
+        if (string.IsNullOrEmpty(multiplexing.MultiplexorSignalName) ||
+            !message.TryResolveSignal(multiplexing.MultiplexorSignalName, out var multiplexor))
+        {
+            return true;
+        }
+
+        return ReferenceEquals(multiplexor, signal) ||
+            multiplexor.Multiplexing.Role != DbcMultiplexingRole.Multiplexor;
     }
 
     private static void ValidateFiniteSignalNumber(

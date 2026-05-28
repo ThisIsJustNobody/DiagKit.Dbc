@@ -145,7 +145,7 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
-    public void WriteText_FloatAndDoubleSignals_ReturnsUnsupportedSignalValueTypeError()
+    public void WriteText_FloatAndDoubleSignals_EmitsSigValTypeLines()
     {
         var ecu = new DbcNode("ECU");
         var document = new DbcDocument(
@@ -162,10 +162,10 @@ public sealed class DbcWriterTests
                     ]),
             ]);
 
-        var result = DbcWriter.WriteText(document);
+        var text = DbcWriter.WriteTextOrThrow(document);
 
-        Assert.IsFalse(result.Succeeded);
-        Assert.AreEqual(2, result.Errors.Count(x => x.Code == "DBC_WRITE_UNSUPPORTED_SIGNAL_VALUE_TYPE"));
+        StringAssert.Contains(text, "SIG_VALTYPE_ 256 Temperature : 1;");
+        StringAssert.Contains(text, "SIG_VALTYPE_ 256 Energy : 2;");
     }
 
     [TestMethod]
@@ -332,14 +332,13 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
-    public void WriteText_UnsupportedMetadata_ReturnsUnsupportedMetadataError()
+    public void WriteText_UnsupportedMetadataOutsideTask3Scope_ReturnsUnsupportedMetadataError()
     {
         var ecu = new DbcNode("ECU");
         var attribute = new DbcAttributeValue("Metadata", DbcAttributeValueKind.String, "\"x\"", "x");
         var environmentVariable = new DbcEnvironmentVariable("EnvStatus", 0, 0, 1, "", 0, 0, "DUMMY_NODE_VECTOR0", [ecu]);
         var metadataCases = new[]
         {
-            new DbcDocument([ecu], [], comment: "network comment"),
             new DbcDocument([ecu], [], environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
             {
                 [environmentVariable.Name] = environmentVariable,
@@ -366,7 +365,7 @@ public sealed class DbcWriterTests
                 [
                     new DbcMessage(
                         new DbcRawMessageId(512),
-                        "ValueStatus",
+                        "InitialValueStatus",
                         8,
                         ecu,
                         [
@@ -382,10 +381,7 @@ public sealed class DbcWriterTests
                                 3,
                                 "",
                                 [ecu],
-                                valueDescriptions: new Dictionary<long, string>
-                                {
-                                    [1] = "On",
-                                }),
+                                initialValue: 1),
                         ]),
                 ]),
         };
@@ -410,6 +406,9 @@ public sealed class DbcWriterTests
             ("NegativeSwitchValue", DbcMultiplexing.Multiplexed(-1)),
             ("NoneWithSwitchValue", new DbcMultiplexing(DbcMultiplexingRole.None, 1)),
             ("MultiplexorWithSwitchValue", new DbcMultiplexing(DbcMultiplexingRole.Multiplexor, 1)),
+            ("ExtendedRangesMissingMultiplexorName", new DbcMultiplexing(DbcMultiplexingRole.Multiplexed, null, null, [new DbcMultiplexorRange(1, 3)])),
+            ("ExtendedRangesMissingMultiplexorSignal", DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(1, 3)])),
+            ("BasicMultiplexingWithMuxNameButNoRanges", new DbcMultiplexing(DbcMultiplexingRole.Multiplexed, 1, "Mode", [])),
         };
 
         foreach (var (caseName, multiplexing) in cases)
@@ -555,7 +554,7 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
-    public void WriteText_ExtendedMultiplexing_ReturnsUnsupportedMultiplexingError()
+    public void WriteText_ExtendedMultiplexing_EmitsSgMulValLine()
     {
         var ecu = new DbcNode("ECU");
         var document = new DbcDocument(
@@ -584,16 +583,15 @@ public sealed class DbcWriterTests
                     ]),
             ]);
 
-        var result = DbcWriter.WriteText(document);
+        var text = DbcWriter.WriteTextOrThrow(document);
 
-        Assert.IsFalse(result.Succeeded);
-        Assert.IsNull(result.Text);
-        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_MULTIPLEXING");
-        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+        StringAssert.Contains(text, " SG_ Mode M : 0|4@1+ (1,0) [0|15] \"\" ECU");
+        StringAssert.Contains(text, " SG_ Speed : 8|16@1+ (1,0) [0|250] \"km/h\" ECU");
+        StringAssert.Contains(text, "SG_MUL_VAL_ 256 Speed Mode 1-3;");
     }
 
     [TestMethod]
-    public void WriteText_MultiplexedSignalWithExtendedRanges_ReturnsUnsupportedMultiplexingError()
+    public void WriteText_MultiplexedSignalWithExtendedRanges_EmitsTokenAndSgMulValLine()
     {
         var ecu = new DbcNode("ECU");
         var multiplexing = DbcMultiplexing.Multiplexed(1)
@@ -612,11 +610,9 @@ public sealed class DbcWriterTests
                     ]),
             ]);
 
-        var result = DbcWriter.WriteText(document);
+        var text = DbcWriter.WriteTextOrThrow(document);
 
-        Assert.IsFalse(result.Succeeded);
-        Assert.IsNull(result.Text);
-        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_MULTIPLEXING");
-        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+        StringAssert.Contains(text, " SG_ Speed m1 : 8|16@1+ (1,0) [0|250] \"km/h\" ECU");
+        StringAssert.Contains(text, "SG_MUL_VAL_ 256 Speed Mode 1-3;");
     }
 }
