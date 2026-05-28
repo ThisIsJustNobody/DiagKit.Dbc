@@ -391,6 +391,93 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
+    public void WriteText_StringAttributeRawWithNewline_ReturnsInvalidAttributeValueError()
+    {
+        var ecu = new DbcNode("ECU");
+        var message = new DbcMessage(
+            new DbcRawMessageId(1029),
+            "UnsafeStringAttribute",
+            8,
+            ecu,
+            [],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["DisplayName"] = new("DisplayName", DbcAttributeValueKind.String, "Line1\nLine2", "Line1\nLine2"),
+            });
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["DisplayName"] = new("DisplayName", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.String),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_VALUE"));
+    }
+
+    [TestMethod]
+    public void WriteText_EnumAttributeDefinitionLabelWithNewline_ReturnsInvalidAttributeDefinitionError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["Mode"] = new("Mode", DbcAttributeOwnerKind.Network, DbcAttributeValueKind.Enum, ["Normal", "Broken\nLabel"]),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_DEFINITION"));
+    }
+
+    [TestMethod]
+    public void WriteText_RelationStringRawWithNewline_ReturnsInvalidAttributeValueError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationText"] = new("RelationText", "BU_SG_REL_", DbcAttributeValueKind.String),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationText"] = new("RelationText", "Line1\nLine2"),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("RelationText", "BU_SG_REL_ ECU 256 Speed", "Line1\nLine2"),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_VALUE"));
+    }
+
+    [TestMethod]
+    public void WriteText_RelationEnumDefinitionLabelWithNewline_ReturnsInvalidAttributeDefinitionError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationMode"] = new("RelationMode", "BU_SG_REL_", DbcAttributeValueKind.Enum, ["Normal", "Broken\nLabel"]),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_DEFINITION"));
+    }
+
+    [TestMethod]
     public void WriteText_InvalidEnvironmentVariableNumbersOrAccessType_ReturnsInvalidEnvironmentVariableError()
     {
         var cases = new[]

@@ -218,6 +218,7 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateDocumentMetadata(DbcDocument document, List<DbcDiagnostic> diagnostics)
     {
+        ValidateOptionalQuotedText("Document", "network", "comment", document.Comment, diagnostics);
         foreach (var definition in document.AttributeDefinitions.Values)
         {
             ValidateLongSymbolAttributeName("Attribute definition", definition.Name, diagnostics);
@@ -227,6 +228,7 @@ internal static partial class DbcWriteValidator
                 definition.ValueKind,
                 definition.Minimum,
                 definition.Maximum,
+                definition.EnumValues,
                 diagnostics);
             if (definition.DefaultValue is not null)
             {
@@ -242,6 +244,7 @@ internal static partial class DbcWriteValidator
     {
         foreach (var definition in document.RelationAttributeDefinitions.Values)
         {
+            ValidateQuotedText("Relation attribute definition", definition.Name, "name", definition.Name, diagnostics);
             if (!IsValidIdentifier(definition.RelationKind))
             {
                 diagnostics.Add(Error(
@@ -255,11 +258,13 @@ internal static partial class DbcWriteValidator
                 definition.ValueKind,
                 definition.Minimum,
                 definition.Maximum,
+                definition.EnumValues,
                 diagnostics);
         }
 
         foreach (var item in document.RelationAttributeDefaults.Values)
         {
+            ValidateQuotedText("Relation attribute default", item.Name, "name", item.Name, diagnostics);
             if (!document.RelationAttributeDefinitions.TryGetValue(item.Name, out var definition))
             {
                 AddUnsupportedMetadata($"Relation attribute default '{item.Name}' has no BA_DEF_REL_ definition and would not reload equivalently.", diagnostics);
@@ -271,6 +276,7 @@ internal static partial class DbcWriteValidator
 
         foreach (var item in document.RelationAttributes)
         {
+            ValidateQuotedText("Relation attribute", item.Name, "name", item.Name, diagnostics);
             if (!IsSafeRelationTarget(item.Target))
             {
                 diagnostics.Add(Error(
@@ -294,8 +300,26 @@ internal static partial class DbcWriteValidator
         DbcAttributeValueKind valueKind,
         double? minimum,
         double? maximum,
+        IReadOnlyList<string> enumValues,
         List<DbcDiagnostic> diagnostics)
     {
+        ValidateQuotedText(definitionKind, name, "name", name, diagnostics);
+        if (valueKind == DbcAttributeValueKind.Enum)
+        {
+            foreach (var enumValue in enumValues)
+            {
+                if (!IsSafeQuotedTextValue(enumValue))
+                {
+                    AddInvalidAttributeDefinition(
+                        definitionKind,
+                        name,
+                        "enum labels must not contain control characters.",
+                        diagnostics);
+                    break;
+                }
+            }
+        }
+
         if (valueKind is DbcAttributeValueKind.String or DbcAttributeValueKind.Enum)
         {
             if (minimum.HasValue || maximum.HasValue)
@@ -427,11 +451,14 @@ internal static partial class DbcWriteValidator
         {
             ValidateAttributeValues("Node", node.Name, node.Attributes, document, diagnostics);
         }
+
+        ValidateOptionalQuotedText("Node", node.Name, "comment", node.Comment, diagnostics);
     }
 
     private static void ValidateMessageMetadata(DbcMessage message, DbcDocument document, List<DbcDiagnostic> diagnostics)
     {
         ValidateAttributeValues("Message", message.Name, message.Attributes, document, diagnostics);
+        ValidateOptionalQuotedText("Message", message.Name, "comment", message.Comment, diagnostics);
 
         if (message.CycleTimeMs.HasValue &&
             (!TryGetAttributeInt32(message.Attributes, "GenMsgCycleTime", out var cycleTimeMs) || cycleTimeMs != message.CycleTimeMs.Value))
@@ -479,6 +506,16 @@ internal static partial class DbcWriteValidator
     private static void ValidateSignalMetadata(DbcMessage message, DbcSignal signal, DbcDocument document, List<DbcDiagnostic> diagnostics)
     {
         ValidateAttributeValues("Signal", $"{message.Name}.{signal.Name}", signal.Attributes, document, diagnostics);
+        ValidateOptionalQuotedText("Signal", $"{message.Name}.{signal.Name}", "comment", signal.Comment, diagnostics);
+        foreach (var valueDescription in signal.ValueDescriptions)
+        {
+            ValidateQuotedText(
+                "Signal value description",
+                $"{message.Name}.{signal.Name}",
+                valueDescription.Key.ToString(CultureInfo.InvariantCulture),
+                valueDescription.Value,
+                diagnostics);
+        }
 
         if (signal.InitialValue.HasValue &&
             (!TryGetAttributeDouble(signal.Attributes, "GenSigStartValue", out var initialValue) || initialValue != signal.InitialValue.Value))
@@ -514,6 +551,7 @@ internal static partial class DbcWriteValidator
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Offset), signal.Offset, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Minimum), signal.Minimum, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Maximum), signal.Maximum, diagnostics);
+        ValidateQuotedText("Signal", $"{message.Name}.{signal.Name}", nameof(signal.Unit), signal.Unit, diagnostics);
     }
 
     private static void ValidateLongSymbolExport(string objectKind, string canonicalName, string exportName, List<DbcDiagnostic> diagnostics)
@@ -537,6 +575,7 @@ internal static partial class DbcWriteValidator
     {
         foreach (var attribute in attributes.Values)
         {
+            ValidateQuotedText($"{objectKind} '{objectName}' attribute", attribute.Name, "name", attribute.Name, diagnostics);
             if (ValidateLongSymbolAttributeName($"{objectKind} '{objectName}' attribute", attribute.Name, diagnostics))
             {
                 continue;
@@ -593,8 +632,20 @@ internal static partial class DbcWriteValidator
                 }
 
                 break;
+            case DbcAttributeValueKind.String:
+                if (!IsSafeQuotedTextValue(value.RawValue))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+
+                break;
             case DbcAttributeValueKind.Enum:
                 if (!IsValidEnumAttributeValue(value.RawValue, definition.EnumValues))
+                {
+                    AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
+                }
+                else if (!IsNumericAttributeRawValue(value.RawValue) &&
+                    !IsSafeQuotedTextValue(value.RawValue))
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
@@ -623,6 +674,11 @@ internal static partial class DbcWriteValidator
         return enumValues.Contains(rawValue, StringComparer.Ordinal);
     }
 
+    private static bool IsNumericAttributeRawValue(string rawValue)
+    {
+        return int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+    }
+
     private static void AddInvalidAttributeValue(
         string objectKind,
         string objectName,
@@ -648,6 +704,7 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateEnvironmentVariable(DbcEnvironmentVariable variable, List<DbcDiagnostic> diagnostics)
     {
+        ValidateQuotedText("Environment variable", variable.Name, nameof(variable.Unit), variable.Unit, diagnostics);
         if (!double.IsFinite(variable.Minimum) ||
             !double.IsFinite(variable.Maximum) ||
             !double.IsFinite(variable.InitialValue) ||
@@ -669,6 +726,49 @@ internal static partial class DbcWriteValidator
         diagnostics.Add(Error(
             "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL",
             $"{ownerDescription} '{attributeName}' is reserved for Vector long-symbol export, which remains out of scope for Task 4."));
+        return true;
+    }
+
+    private static void ValidateOptionalQuotedText(
+        string objectKind,
+        string objectName,
+        string fieldName,
+        string? value,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (value is not null)
+        {
+            ValidateQuotedText(objectKind, objectName, fieldName, value, diagnostics);
+        }
+    }
+
+    private static void ValidateQuotedText(
+        string objectKind,
+        string objectName,
+        string fieldName,
+        string value,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (IsSafeQuotedTextValue(value))
+        {
+            return;
+        }
+
+        diagnostics.Add(Error(
+            "DBC_WRITE_INVALID_QUOTED_TEXT",
+            $"{objectKind} '{objectName}' {fieldName} contains control characters that cannot be emitted as reloadable DBC quoted text."));
+    }
+
+    private static bool IsSafeQuotedTextValue(string text)
+    {
+        foreach (var character in text)
+        {
+            if (char.IsControl(character))
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 
