@@ -728,8 +728,14 @@ public static class DbcWriter
 
     private static bool IsNumericAttributeRawValue(string rawValue)
     {
-        return double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ||
-            rawValue.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+        if (rawValue.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return rawValue.Length > 2 &&
+                ulong.TryParse(rawValue[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _);
+        }
+
+        return double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) &&
+            double.IsFinite(parsed);
     }
 
     private static string EscapeQuotedText(string value)

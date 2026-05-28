@@ -177,6 +177,85 @@ public sealed class DbcWriterReloadEquivalenceTests
     }
 
     [TestMethod]
+    public void WriteText_EnumAttributeSpecialFloatLabels_QuotesAndReloadsEquivalentRawValue()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["SpecialMode"] = new(
+                    "SpecialMode",
+                    DbcAttributeOwnerKind.Network,
+                    DbcAttributeValueKind.Enum,
+                    ["-Infinity", "NaN"]),
+            },
+            new Dictionary<string, DbcAttributeValue>
+            {
+                ["SpecialMode"] = new("SpecialMode", DbcAttributeValueKind.Enum, "-Infinity", "-Infinity"),
+            });
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_DEF_ \"SpecialMode\" ENUM \"-Infinity\",\"NaN\";");
+        StringAssert.Contains(text, "BA_ \"SpecialMode\" \"-Infinity\";");
+        Assert.IsFalse(text.Contains("BA_ \"SpecialMode\" -Infinity;", StringComparison.Ordinal));
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.AreEqual("-Infinity", reloaded.Attributes["SpecialMode"].RawValue);
+        Assert.AreEqual("-Infinity", reloaded.Attributes["SpecialMode"].Value);
+    }
+
+    [TestMethod]
+    public void WriteText_RelationStringSpecialNumericTokens_QuotesAndReloadsEquivalentRawValues()
+    {
+        var vcu = new DbcNode("ECU");
+        var host = new DbcNode("HOST");
+        var original = new DbcDocument(
+            [vcu, host],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    vcu,
+                    [new DbcSignal("Speed", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [host])]),
+            ],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationText"] = new("RelationText", "BU_SG_REL_", DbcAttributeValueKind.String),
+                ["RelationHexLike"] = new("RelationHexLike", "BU_SG_REL_", DbcAttributeValueKind.String),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationText"] = new("RelationText", "-Infinity"),
+                ["RelationHexLike"] = new("RelationHexLike", "0xZZ"),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("RelationText", "BU_SG_REL_ ECU 256 Speed", "-Infinity"),
+                new DbcRelationAttributeValue("RelationHexLike", "BU_SG_REL_ ECU 256 Speed", "0xZZ"),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationText\" \"-Infinity\";");
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationHexLike\" \"0xZZ\";");
+        StringAssert.Contains(text, "BA_REL_ \"RelationText\" BU_SG_REL_ ECU 256 Speed \"-Infinity\";");
+        StringAssert.Contains(text, "BA_REL_ \"RelationHexLike\" BU_SG_REL_ ECU 256 Speed \"0xZZ\";");
+        Assert.IsFalse(text.Contains("BA_REL_ \"RelationText\" BU_SG_REL_ ECU 256 Speed -Infinity;", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("BA_REL_ \"RelationHexLike\" BU_SG_REL_ ECU 256 Speed 0xZZ;", StringComparison.Ordinal));
+        var result = DbcLoader.LoadText(text, DbcLoadOptions.Lenient);
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var reloaded = result.GetDocumentOrThrow();
+        Assert.AreEqual("-Infinity", reloaded.RelationAttributeDefaults["RelationText"].RawValue);
+        Assert.AreEqual("0xZZ", reloaded.RelationAttributeDefaults["RelationHexLike"].RawValue);
+        CollectionAssert.AreEqual(
+            new[] { "-Infinity", "0xZZ" },
+            reloaded.RelationAttributes.Select(x => x.RawValue).ToArray());
+    }
+
+    [TestMethod]
     public void WriteText_AdditionalTransmitters_EmitsBoTxBuAndReloadsEquivalentTransmitters()
     {
         var primary = new DbcNode("Primary");
