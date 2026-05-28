@@ -108,4 +108,31 @@ public sealed class DbcWriterReloadEquivalenceTests
         var signal = reloaded.ResolveMessage("NoReceiverStatus").ResolveSignal("Spare");
         Assert.AreEqual(0, signal.Receivers.Count);
     }
+
+    [TestMethod]
+    public void WriteText_LoadText_PreservesEscapedSignalUnit()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        const string unit = "V\\rms\"quoted\"";
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(1024),
+                    "EscapedUnitStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Voltage", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.01, 0, 0, 100, unit, [tool])]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+        StringAssert.Contains(text, "\"V\\\\rms\\\"quoted\\\"\"");
+
+        var signal = DbcLoader.LoadTextDocumentOrThrow(text)
+            .ResolveMessage("EscapedUnitStatus")
+            .ResolveSignal("Voltage");
+
+        Assert.AreEqual(unit, signal.Unit);
+    }
 }

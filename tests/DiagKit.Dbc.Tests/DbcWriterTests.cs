@@ -199,6 +199,86 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
+    public void WriteText_ReceiverExportNameUsesVectorSentinel_ReturnsReservedReceiverNameError()
+    {
+        var ecu = new DbcNode("ECU");
+        var reservedReceiver = new DbcNode("ReservedReceiver", sourceName: "Vector__XXX");
+        var document = new DbcDocument(
+            [ecu, reservedReceiver],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [reservedReceiver])]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_RESERVED_RECEIVER_NAME");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
+    public void WriteText_MalformedMultiplexedSignal_ReturnsUnsupportedMultiplexingError()
+    {
+        var ecu = new DbcNode("ECU");
+        var malformedMultiplexing = new DbcMultiplexing(DbcMultiplexingRole.Multiplexed, null);
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [ecu], malformedMultiplexing)]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_MULTIPLEXING");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
+    public void WriteText_InvalidSignalBitRanges_ReturnsInvalidSignalBitRangeError()
+    {
+        (string SignalName, int StartBit, int BitLength)[] cases =
+        {
+            ("NegativeStart", -1, 8),
+            ("ZeroLength", 0, 0),
+            ("BeyondCanFdFrame", 500, 13),
+        };
+
+        foreach (var (signalName, startBit, bitLength) in cases)
+        {
+            var ecu = new DbcNode("ECU");
+            var document = new DbcDocument(
+                [ecu],
+                [
+                    new DbcMessage(
+                        new DbcRawMessageId(256),
+                        "VehicleStatus",
+                        64,
+                        ecu,
+                        [new DbcSignal(signalName, startBit, bitLength, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "", [ecu])]),
+                ]);
+
+            var result = DbcWriter.WriteText(document);
+
+            Assert.IsFalse(result.Succeeded, signalName);
+            Assert.IsNull(result.Text, signalName);
+            Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_SIGNAL_BIT_RANGE"), signalName);
+        }
+    }
+
+    [TestMethod]
     public void WriteText_UseCanonicalNamesWhenValid_EmitsCanonicalMessageSignalAndNodeReferences()
     {
         var ecu = new DbcNode("CanonicalEcu", sourceName: "ECU");

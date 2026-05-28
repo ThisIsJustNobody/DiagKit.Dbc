@@ -4,6 +4,9 @@ namespace DiagKit.Dbc;
 
 internal static partial class DbcWriteValidator
 {
+    private const string EmptyReceiverSentinel = "Vector__XXX";
+    private const int MaxCanFdSignalBitEnd = 512;
+
     public static DbcValidationResult Validate(DbcDocument document, DbcWriterOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -41,6 +44,13 @@ internal static partial class DbcWriteValidator
                     {
                         diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Signal '{message.Name}.{signal.Name}' receiver name '{receiverName}' is not a valid DBC identifier."));
                     }
+
+                    if (string.Equals(receiverName, EmptyReceiverSentinel, StringComparison.Ordinal))
+                    {
+                        diagnostics.Add(Error(
+                            "DBC_WRITE_RESERVED_RECEIVER_NAME",
+                            $"Signal '{message.Name}.{signal.Name}' receiver name '{receiverName}' is reserved for empty receiver lists in normalized DBC export."));
+                    }
                 }
             }
         }
@@ -50,6 +60,8 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateSignal(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
     {
+        ValidateSignalBitRange(message, signal, diagnostics);
+
         if (signal.ValueType is DbcSignalValueType.Float or DbcSignalValueType.Double)
         {
             diagnostics.Add(Error(
@@ -57,18 +69,39 @@ internal static partial class DbcWriteValidator
                 $"Signal '{message.Name}.{signal.Name}' uses {signal.ValueType}, but Task 2 normalized export does not emit SIG_VALTYPE_ yet."));
         }
 
-        if (signal.Multiplexing.SwitchRanges.Count > 0 ||
-            !string.IsNullOrEmpty(signal.Multiplexing.MultiplexorSignalName))
+        if (HasUnsupportedMultiplexing(signal.Multiplexing))
         {
             diagnostics.Add(Error(
                 "DBC_WRITE_UNSUPPORTED_MULTIPLEXING",
-                $"Signal '{message.Name}.{signal.Name}' uses extended multiplexing, but Task 2 normalized export does not emit SG_MUL_VAL_ yet."));
+                $"Signal '{message.Name}.{signal.Name}' uses unsupported multiplexing for Task 2 normalized export."));
         }
 
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Factor), signal.Factor, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Offset), signal.Offset, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Minimum), signal.Minimum, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Maximum), signal.Maximum, diagnostics);
+    }
+
+    private static void ValidateSignalBitRange(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
+    {
+        var bitEnd = (long)signal.StartBit + signal.BitLength;
+        if (signal.StartBit >= 0 &&
+            signal.BitLength > 0 &&
+            bitEnd <= MaxCanFdSignalBitEnd)
+        {
+            return;
+        }
+
+        diagnostics.Add(Error(
+            "DBC_WRITE_INVALID_SIGNAL_BIT_RANGE",
+            $"Signal '{message.Name}.{signal.Name}' bit range {signal.StartBit}|{signal.BitLength} cannot be exported as a single-frame DBC signal."));
+    }
+
+    private static bool HasUnsupportedMultiplexing(DbcMultiplexing multiplexing)
+    {
+        return multiplexing.SwitchRanges.Count > 0 ||
+            !string.IsNullOrEmpty(multiplexing.MultiplexorSignalName) ||
+            (multiplexing.Role == DbcMultiplexingRole.Multiplexed && multiplexing.SwitchValue is null);
     }
 
     private static void ValidateFiniteSignalNumber(
