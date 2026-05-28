@@ -6,6 +6,8 @@ internal static partial class DbcWriteValidator
 {
     private const string EmptyReceiverSentinel = "Vector__XXX";
     private const int MaxSignalBitLength = 64;
+    private const DbcFrameFlags UnsupportedFrameFlags =
+        DbcFrameFlags.BitRateSwitch | DbcFrameFlags.ErrorStateIndicator;
 
     public static DbcValidationResult Validate(DbcDocument document, DbcWriterOptions? options = null)
     {
@@ -13,18 +15,22 @@ internal static partial class DbcWriteValidator
         options ??= DbcWriterOptions.Default;
 
         var diagnostics = new List<DbcDiagnostic>();
+        var metadataValidatedNodes = new HashSet<DbcNode>();
+        ValidateDocumentMetadata(document, diagnostics);
         ValidateObjectName("node", document.Nodes.Select(x => DbcWriterNameFormatter.GetNodeExportName(x, options)), diagnostics);
         ValidateObjectName("message", document.Messages.Select(x => DbcWriterNameFormatter.GetMessageExportName(x, options)), diagnostics);
         foreach (var node in document.Nodes)
         {
             ValidateLongSymbolExport("Node", node.Name, DbcWriterNameFormatter.GetNodeExportName(node, options), diagnostics);
+            ValidateNodeMetadataOnce(node, metadataValidatedNodes, diagnostics);
         }
 
         foreach (var message in document.Messages)
         {
             ValidateLongSymbolExport("Message", message.Name, DbcWriterNameFormatter.GetMessageExportName(message, options), diagnostics);
+            ValidateMessageMetadata(message, diagnostics);
 
-            if (message.Transmitters.Count > 1)
+            if (HasUnsupportedTransmitters(message, options))
             {
                 diagnostics.Add(Error(
                     "DBC_WRITE_UNSUPPORTED_ADDITIONAL_TRANSMITTERS",
@@ -41,6 +47,7 @@ internal static partial class DbcWriteValidator
 
             var transmitterName = DbcWriterNameFormatter.GetNodeExportName(message.PrimaryTransmitter, options);
             ValidateLongSymbolExport("Node", message.PrimaryTransmitter.Name, transmitterName, diagnostics);
+            ValidateNodeMetadataOnce(message.PrimaryTransmitter, metadataValidatedNodes, diagnostics);
             if (!IsValidIdentifier(transmitterName))
             {
                 diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Message '{message.Name}' transmitter name '{transmitterName}' is not a valid DBC identifier."));
@@ -50,12 +57,14 @@ internal static partial class DbcWriteValidator
             foreach (var signal in message.Signals)
             {
                 ValidateLongSymbolExport("Signal", signal.Name, DbcWriterNameFormatter.GetSignalExportName(signal, options), diagnostics);
+                ValidateSignalMetadata(message, signal, diagnostics);
                 ValidateSignal(message, signal, diagnostics);
 
                 foreach (var receiver in signal.Receivers)
                 {
                     var receiverName = DbcWriterNameFormatter.GetNodeExportName(receiver, options);
                     ValidateLongSymbolExport("Node", receiver.Name, receiverName, diagnostics);
+                    ValidateNodeMetadataOnce(receiver, metadataValidatedNodes, diagnostics);
                     if (!IsValidIdentifier(receiverName))
                     {
                         diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Signal '{message.Name}.{signal.Name}' receiver name '{receiverName}' is not a valid DBC identifier."));
@@ -72,6 +81,149 @@ internal static partial class DbcWriteValidator
         }
 
         return new DbcValidationResult(diagnostics);
+    }
+
+    private static bool HasUnsupportedTransmitters(DbcMessage message, DbcWriterOptions options)
+    {
+        if (message.Transmitters.Count != 1)
+        {
+            return true;
+        }
+
+        var primaryName = DbcWriterNameFormatter.GetNodeExportName(message.PrimaryTransmitter, options);
+        var transmitterName = DbcWriterNameFormatter.GetNodeExportName(message.Transmitters[0], options);
+        return !string.Equals(primaryName, transmitterName, StringComparison.Ordinal);
+    }
+
+    private static void ValidateDocumentMetadata(DbcDocument document, List<DbcDiagnostic> diagnostics)
+    {
+        if (!string.IsNullOrEmpty(document.Comment))
+        {
+            AddUnsupportedMetadata("Document comment metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (document.AttributeDefinitions.Count > 0)
+        {
+            AddUnsupportedMetadata("Document attribute definitions are not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (document.Attributes.Count > 0)
+        {
+            AddUnsupportedMetadata("Document attribute values are not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (document.EnvironmentVariables.Count > 0)
+        {
+            AddUnsupportedMetadata("Document environment variables are not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (document.RelationAttributeDefinitions.Count > 0)
+        {
+            AddUnsupportedMetadata("Document relation attribute definitions are not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (document.RelationAttributeDefaults.Count > 0)
+        {
+            AddUnsupportedMetadata("Document relation attribute defaults are not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (document.RelationAttributes.Count > 0)
+        {
+            AddUnsupportedMetadata("Document relation attributes are not supported by Task 2 normalized export.", diagnostics);
+        }
+    }
+
+    private static void ValidateNodeMetadataOnce(
+        DbcNode node,
+        HashSet<DbcNode> validatedNodes,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (!validatedNodes.Add(node))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(node.Comment))
+        {
+            AddUnsupportedMetadata($"Node '{node.Name}' comment metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (node.Attributes.Count > 0)
+        {
+            AddUnsupportedMetadata($"Node '{node.Name}' attribute values are not supported by Task 2 normalized export.", diagnostics);
+        }
+    }
+
+    private static void ValidateMessageMetadata(DbcMessage message, List<DbcDiagnostic> diagnostics)
+    {
+        if (!string.IsNullOrEmpty(message.Comment))
+        {
+            AddUnsupportedMetadata($"Message '{message.Name}' comment metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (message.Attributes.Count > 0)
+        {
+            AddUnsupportedMetadata($"Message '{message.Name}' attribute values are not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (message.CycleTimeMs.HasValue)
+        {
+            AddUnsupportedMetadata($"Message '{message.Name}' cycle time metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (message.SendType != DbcSendType.Unknown)
+        {
+            AddUnsupportedMetadata($"Message '{message.Name}' send type metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (message.TimeoutTimeMs.HasValue)
+        {
+            AddUnsupportedMetadata($"Message '{message.Name}' timeout metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        var unsupportedFrameFlags = message.FrameFlags & UnsupportedFrameFlags;
+        if (message.DataLength <= 8)
+        {
+            unsupportedFrameFlags |= message.FrameFlags & DbcFrameFlags.FlexibleDataRate;
+        }
+
+        if (unsupportedFrameFlags != DbcFrameFlags.None)
+        {
+            AddUnsupportedMetadata($"Message '{message.Name}' frame flags '{unsupportedFrameFlags}' are not supported by Task 2 normalized export.", diagnostics);
+        }
+    }
+
+    private static void ValidateSignalMetadata(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
+    {
+        if (!string.IsNullOrEmpty(signal.Comment))
+        {
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' comment metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (signal.ValueDescriptions.Count > 0)
+        {
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' value descriptions are not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (signal.Attributes.Count > 0)
+        {
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' attribute values are not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (signal.InitialValue.HasValue)
+        {
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' initial value metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (signal.SendType != DbcSendType.Unknown)
+        {
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' send type metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
+
+        if (signal.TimeoutTimeMs.HasValue)
+        {
+            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' timeout metadata is not supported by Task 2 normalized export.", diagnostics);
+        }
     }
 
     private static void ValidateSignal(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
@@ -212,6 +364,11 @@ internal static partial class DbcWriteValidator
     private static DbcDiagnostic Error(string code, string message)
     {
         return new DbcDiagnostic(DbcDiagnosticSeverity.Error, code, message);
+    }
+
+    private static void AddUnsupportedMetadata(string message, List<DbcDiagnostic> diagnostics)
+    {
+        diagnostics.Add(Error("DBC_WRITE_UNSUPPORTED_METADATA", message));
     }
 
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
