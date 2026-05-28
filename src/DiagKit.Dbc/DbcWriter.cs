@@ -728,6 +728,12 @@ public static class DbcWriter
 
     private static bool IsNumericAttributeRawValue(string rawValue)
     {
+        if (rawValue.Length == 0 ||
+            !string.Equals(rawValue, rawValue.Trim(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         if (rawValue.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
             return rawValue.Length > 2 &&

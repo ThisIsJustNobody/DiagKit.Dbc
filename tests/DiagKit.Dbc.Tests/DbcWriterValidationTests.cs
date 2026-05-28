@@ -292,6 +292,84 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
+    public void WriteText_NumericAttributeRawWithLeadingOrTrailingWhitespace_ReturnsInvalidAttributeValueError()
+    {
+        var ecu = new DbcNode("ECU");
+        var message = new DbcMessage(
+            new DbcRawMessageId(1030),
+            "WhitespaceNumericAttributes",
+            8,
+            ecu,
+            [],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["IntegerAttribute"] = new("IntegerAttribute", DbcAttributeValueKind.Integer, "1 ", 1),
+                ["HexAttribute"] = new("HexAttribute", DbcAttributeValueKind.Hex, " 1", 1),
+                ["FloatAttribute"] = new("FloatAttribute", DbcAttributeValueKind.Float, "1 ", 1d),
+            });
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["IntegerAttribute"] = new("IntegerAttribute", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.Integer, minimum: 0, maximum: 10),
+                ["HexAttribute"] = new("HexAttribute", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.Hex, minimum: 0, maximum: 10),
+                ["FloatAttribute"] = new("FloatAttribute", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.Float, minimum: 0, maximum: 10),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_VALUE"));
+    }
+
+    [TestMethod]
+    public void WriteText_EnumNumericIndexRawWithWhitespace_ReturnsInvalidAttributeValueError()
+    {
+        var document = new DbcDocument(
+            [new DbcNode("ECU")],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["Mode"] = new("Mode", DbcAttributeOwnerKind.Network, DbcAttributeValueKind.Enum, ["Off", "On"]),
+            },
+            new Dictionary<string, DbcAttributeValue>
+            {
+                ["Mode"] = new("Mode", DbcAttributeValueKind.Enum, "1 ", "On"),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_VALUE"));
+    }
+
+    [TestMethod]
+    public void WriteText_RelationNumericRawWithWhitespace_ReturnsInvalidAttributeValueError()
+    {
+        var document = new DbcDocument(
+            [new DbcNode("ECU")],
+            [],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationAttribute"] = new("RelationAttribute", "BU_SG_REL_", DbcAttributeValueKind.Integer, minimum: 0, maximum: 10),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationAttribute"] = new("RelationAttribute", "1 "),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("RelationAttribute", "BU_SG_REL_ ECU 256 Speed", "1 "),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_VALUE"));
+    }
+
+    [TestMethod]
     public void WriteText_InvalidNumericAttributeDefinitionRanges_ReturnsInvalidAttributeDefinitionError()
     {
         var document = new DbcDocument(

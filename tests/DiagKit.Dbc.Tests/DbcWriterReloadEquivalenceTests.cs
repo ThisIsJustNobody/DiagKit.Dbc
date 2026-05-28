@@ -256,6 +256,41 @@ public sealed class DbcWriterReloadEquivalenceTests
     }
 
     [TestMethod]
+    public void WriteText_StringMetadataNumericTokenWithWhitespace_QuotesAndReloadsEquivalentRawValue()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["DisplayName"] = new("DisplayName", DbcAttributeOwnerKind.Network, DbcAttributeValueKind.String),
+            },
+            new Dictionary<string, DbcAttributeValue>
+            {
+                ["DisplayName"] = new("DisplayName", DbcAttributeValueKind.String, "1 ", "1 "),
+            },
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationText"] = new("RelationText", "BU_SG_REL_", DbcAttributeValueKind.String),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationText"] = new("RelationText", "1 "),
+            });
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_ \"DisplayName\" \"1 \";");
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationText\" \"1 \";");
+        Assert.IsFalse(text.Contains("BA_ \"DisplayName\" 1 ;", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("BA_DEF_DEF_REL_ \"RelationText\" 1 ;", StringComparison.Ordinal));
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.AreEqual("1 ", reloaded.Attributes["DisplayName"].RawValue);
+        Assert.AreEqual("1 ", reloaded.RelationAttributeDefaults["RelationText"].RawValue);
+    }
+
+    [TestMethod]
     public void WriteText_AdditionalTransmitters_EmitsBoTxBuAndReloadsEquivalentTransmitters()
     {
         var primary = new DbcNode("Primary");

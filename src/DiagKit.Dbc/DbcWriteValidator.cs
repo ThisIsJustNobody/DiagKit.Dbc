@@ -611,21 +611,24 @@ internal static partial class DbcWriteValidator
         switch (definition.ValueKind)
         {
             case DbcAttributeValueKind.Integer:
-                if (!long.TryParse(value.RawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                if (!IsCanonicalRawToken(value.RawValue) ||
+                    !long.TryParse(value.RawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
 
                 break;
             case DbcAttributeValueKind.Hex:
-                if (!TryParseHexOrDecimalInteger(value.RawValue))
+                if (!IsCanonicalRawToken(value.RawValue) ||
+                    !TryParseHexOrDecimalInteger(value.RawValue))
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
                 }
 
                 break;
             case DbcAttributeValueKind.Float:
-                if (!double.TryParse(value.RawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ||
+                if (!IsCanonicalRawToken(value.RawValue) ||
+                    !double.TryParse(value.RawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ||
                     !double.IsFinite(parsed))
                 {
                     AddInvalidAttributeValue(objectKind, objectName, value.Name, value.RawValue, diagnostics);
@@ -666,7 +669,8 @@ internal static partial class DbcWriteValidator
 
     private static bool IsValidEnumAttributeValue(string rawValue, IReadOnlyList<string> enumValues)
     {
-        if (int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index))
+        if (IsCanonicalRawToken(rawValue) &&
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index))
         {
             return index >= 0 && index < enumValues.Count;
         }
@@ -676,7 +680,14 @@ internal static partial class DbcWriteValidator
 
     private static bool IsNumericAttributeRawValue(string rawValue)
     {
-        return int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+        return IsCanonicalRawToken(rawValue) &&
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+    }
+
+    private static bool IsCanonicalRawToken(string rawValue)
+    {
+        return rawValue.Length > 0 &&
+            string.Equals(rawValue, rawValue.Trim(), StringComparison.Ordinal);
     }
 
     private static void AddInvalidAttributeValue(
