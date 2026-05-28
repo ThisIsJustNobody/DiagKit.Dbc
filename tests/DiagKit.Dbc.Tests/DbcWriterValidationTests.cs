@@ -258,6 +258,40 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
+    public void WriteText_NegativeHexAttributeDefaultAndValue_ReturnsInvalidAttributeValueError()
+    {
+        var ecu = new DbcNode("ECU");
+        var message = new DbcMessage(
+            new DbcRawMessageId(1028),
+            "NegativeHexAttribute",
+            8,
+            ecu,
+            [],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["HexAttribute"] = new("HexAttribute", DbcAttributeValueKind.Hex, "-1", -1),
+            });
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["HexAttribute"] = new(
+                    "HexAttribute",
+                    DbcAttributeOwnerKind.Message,
+                    DbcAttributeValueKind.Hex,
+                    minimum: 0,
+                    maximum: 255,
+                    defaultValue: new DbcAttributeValue("HexAttribute", DbcAttributeValueKind.Hex, "-1", -1)),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_ATTRIBUTE_VALUE"));
+    }
+
+    [TestMethod]
     public void WriteText_InvalidEnvironmentVariableNumbersOrAccessType_ReturnsInvalidEnvironmentVariableError()
     {
         var cases = new[]
@@ -266,6 +300,7 @@ public sealed class DbcWriterValidationTests
             new DbcEnvironmentVariable("BadMax", 0, 0, double.PositiveInfinity, "", 0, 1, "DUMMY_NODE_VECTOR0"),
             new DbcEnvironmentVariable("BadInitial", 0, 0, 1, "", double.NegativeInfinity, 1, "DUMMY_NODE_VECTOR0"),
             new DbcEnvironmentVariable("BadAccessType", 0, 0, 1, "", 0, 1, "ACCESS TYPE"),
+            new DbcEnvironmentVariable("BrokenAccessType", 0, 0, 1, "", 0, 1, "DUMMY;BROKEN"),
         };
 
         foreach (var variable in cases)

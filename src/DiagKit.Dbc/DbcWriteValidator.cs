@@ -428,7 +428,7 @@ internal static partial class DbcWriteValidator
             return ulong.TryParse(rawValue[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _);
         }
 
-        return long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+        return ulong.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
     }
 
     private static bool IsValidEnumAttributeValue(string rawValue, IReadOnlyList<string> enumValues)
@@ -458,8 +458,7 @@ internal static partial class DbcWriteValidator
         if (!double.IsFinite(variable.Minimum) ||
             !double.IsFinite(variable.Maximum) ||
             !double.IsFinite(variable.InitialValue) ||
-            string.IsNullOrWhiteSpace(variable.AccessType) ||
-            variable.AccessType.Any(char.IsWhiteSpace))
+            !IsValidIdentifier(variable.AccessType))
         {
             diagnostics.Add(Error(
                 "DBC_WRITE_INVALID_ENVIRONMENT_VARIABLE",
