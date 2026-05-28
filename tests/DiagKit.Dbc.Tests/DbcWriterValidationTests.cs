@@ -867,6 +867,237 @@ public sealed class DbcWriterValidationTests
         Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_METADATA"));
     }
 
+    [TestMethod]
+    public void WriteText_MessageCycleTimeAttributeWithoutSemanticValue_ReturnsUnsupportedMetadataError()
+    {
+        var ecu = new DbcNode("ECU");
+        var message = new DbcMessage(
+            new DbcRawMessageId(256),
+            "Status",
+            8,
+            ecu,
+            [],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["GenMsgCycleTime"] = new("GenMsgCycleTime", DbcAttributeValueKind.Integer, "10", 10),
+            });
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["GenMsgCycleTime"] = new("GenMsgCycleTime", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_METADATA"));
+    }
+
+    [TestMethod]
+    public void WriteText_SignalStartValueAttributeWithoutSemanticValue_ReturnsUnsupportedMetadataError()
+    {
+        var ecu = new DbcNode("ECU");
+        var signal = new DbcSignal(
+            "Speed",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [ecu],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["GenSigStartValue"] = new("GenSigStartValue", DbcAttributeValueKind.Integer, "5", 5),
+            });
+        var message = new DbcMessage(new DbcRawMessageId(256), "Status", 8, ecu, [signal]);
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["GenSigStartValue"] = new("GenSigStartValue", DbcAttributeOwnerKind.Signal, DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_METADATA"));
+    }
+
+    [TestMethod]
+    public void WriteText_MappedAttributeDefaultsWouldChangeMessageOrSignalSemantics_ReturnsUnsupportedMetadataError()
+    {
+        var ecu = new DbcNode("ECU");
+        var signal = new DbcSignal(
+            "Speed",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [ecu]);
+        var message = new DbcMessage(new DbcRawMessageId(256), "Status", 8, ecu, [signal]);
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["GenMsgSendType"] = new(
+                    "GenMsgSendType",
+                    DbcAttributeOwnerKind.Message,
+                    DbcAttributeValueKind.Enum,
+                    ["cyclic", "event"],
+                    defaultValue: new DbcAttributeValue("GenMsgSendType", DbcAttributeValueKind.Enum, "cyclic", "cyclic")),
+                ["GenSigTimeoutTime"] = new(
+                    "GenSigTimeoutTime",
+                    DbcAttributeOwnerKind.Signal,
+                    DbcAttributeValueKind.Integer,
+                    minimum: 0,
+                    maximum: 65535,
+                    defaultValue: new DbcAttributeValue("GenSigTimeoutTime", DbcAttributeValueKind.Integer, "250", 250)),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_METADATA"));
+    }
+
+    [TestMethod]
+    public void WriteText_MappedMetadataExplicitAttributeOrDefaultMatchingSemanticValue_Succeeds()
+    {
+        var ecu = new DbcNode("ECU");
+        var signal = new DbcSignal(
+            "Speed",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [ecu],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["GenSigStartValue"] = new("GenSigStartValue", DbcAttributeValueKind.Integer, "5", 5),
+                ["GenSigSendType"] = new("GenSigSendType", DbcAttributeValueKind.Enum, "onChange", "onChange"),
+            },
+            initialValue: 5,
+            sendType: DbcSendType.OnChange,
+            timeoutTimeMs: 250);
+        var message = new DbcMessage(
+            new DbcRawMessageId(256),
+            "Status",
+            8,
+            ecu,
+            [signal],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["GenMsgCycleTime"] = new("GenMsgCycleTime", DbcAttributeValueKind.Integer, "10", 10),
+                ["GenMsgTimeoutTime"] = new("GenMsgTimeoutTime", DbcAttributeValueKind.Integer, "1000", 1000),
+            },
+            cycleTimeMs: 10,
+            sendType: DbcSendType.Cyclic,
+            timeoutTimeMs: 1000);
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["GenMsgCycleTime"] = new("GenMsgCycleTime", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+                ["GenMsgSendType"] = new(
+                    "GenMsgSendType",
+                    DbcAttributeOwnerKind.Message,
+                    DbcAttributeValueKind.Enum,
+                    ["cyclic", "event"],
+                    defaultValue: new DbcAttributeValue("GenMsgSendType", DbcAttributeValueKind.Enum, "cyclic", "cyclic")),
+                ["GenMsgTimeoutTime"] = new("GenMsgTimeoutTime", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+                ["GenSigStartValue"] = new("GenSigStartValue", DbcAttributeOwnerKind.Signal, DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+                ["GenSigSendType"] = new("GenSigSendType", DbcAttributeOwnerKind.Signal, DbcAttributeValueKind.Enum, ["onChange"]),
+                ["GenSigTimeoutTime"] = new(
+                    "GenSigTimeoutTime",
+                    DbcAttributeOwnerKind.Signal,
+                    DbcAttributeValueKind.Integer,
+                    minimum: 0,
+                    maximum: 65535,
+                    defaultValue: new DbcAttributeValue("GenSigTimeoutTime", DbcAttributeValueKind.Integer, "250", 250)),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+    }
+
+    [TestMethod]
+    public void WriteText_ExtraNameAliases_ReturnsUnsupportedMetadataError()
+    {
+        var ecu = new DbcNode("EngineControlUnit", sourceName: "ECU", nameAliases: ["ExtraNodeAlias"]);
+        var receiver = new DbcNode("DisplayNode", sourceName: "Display", nameAliases: ["ExtraReferencedAlias"]);
+        var signal = new DbcSignal(
+            "VehicleSpeed",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [receiver],
+            sourceName: "VehSpd",
+            nameAliases: ["ExtraSignalAlias"]);
+        var message = new DbcMessage(
+            new DbcRawMessageId(256),
+            "VehicleStatus",
+            8,
+            ecu,
+            [signal],
+            sourceName: "VehStatus",
+            nameAliases: ["ExtraMessageAlias"]);
+        var variable = new DbcEnvironmentVariable(
+            "IgnitionState",
+            0,
+            0,
+            1,
+            "",
+            0,
+            1,
+            "DUMMY_NODE_VECTOR0",
+            sourceName: "Ignition",
+            nameAliases: ["ExtraEnvAlias"]);
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
+            {
+                [variable.Name] = variable,
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_METADATA"));
+        var messages = string.Join(Environment.NewLine, result.Errors.Select(x => x.Message));
+        StringAssert.Contains(messages, "ExtraNodeAlias");
+        StringAssert.Contains(messages, "ExtraReferencedAlias");
+        StringAssert.Contains(messages, "ExtraMessageAlias");
+        StringAssert.Contains(messages, "ExtraSignalAlias");
+        StringAssert.Contains(messages, "ExtraEnvAlias");
+    }
+
     private static DbcAttributeDefinition CreateVFrameFormatDefinition()
     {
         return new DbcAttributeDefinition(

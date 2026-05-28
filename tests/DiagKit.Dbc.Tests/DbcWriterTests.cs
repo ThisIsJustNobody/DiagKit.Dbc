@@ -58,7 +58,7 @@ public sealed class DbcWriterTests
     public void WriteText_UseCanonicalNamesWhenValid_EmitsCanonicalNodeName()
     {
         var document = new DbcDocument(
-            [new DbcNode("CanonicalNode", sourceName: "ShortNode")],
+            [new DbcNode("CanonicalNode")],
             []);
         var options = new DbcWriterOptions
         {
@@ -310,8 +310,8 @@ public sealed class DbcWriterTests
     [TestMethod]
     public void WriteText_UseCanonicalNamesWhenValid_DoesNotEmitLongSymbolWhenCanonicalNameIsExported()
     {
-        var ecu = new DbcNode("CanonicalEcu", sourceName: "ECU");
-        var tool = new DbcNode("CanonicalTool", sourceName: "Tool");
+        var ecu = new DbcNode("CanonicalEcu");
+        var tool = new DbcNode("CanonicalTool");
         var variable = new DbcEnvironmentVariable(
             "CanonicalEnv",
             0,
@@ -320,8 +320,7 @@ public sealed class DbcWriterTests
             "",
             0,
             1,
-            "DUMMY_NODE_VECTOR0",
-            sourceName: "EnvShort");
+            "DUMMY_NODE_VECTOR0");
         var document = new DbcDocument(
             [ecu, tool],
             [
@@ -330,8 +329,7 @@ public sealed class DbcWriterTests
                     "CanonicalStatus",
                     8,
                     ecu,
-                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool], sourceName: "SpeedShort")],
-                    sourceName: "StatusShort"),
+                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool])]),
             ],
             environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
             {
@@ -600,8 +598,8 @@ public sealed class DbcWriterTests
     [TestMethod]
     public void WriteText_UseCanonicalNamesWhenValid_EmitsCanonicalMessageSignalAndNodeReferences()
     {
-        var ecu = new DbcNode("CanonicalEcu", sourceName: "ECU");
-        var tool = new DbcNode("CanonicalTool", sourceName: "Tool");
+        var ecu = new DbcNode("CanonicalEcu");
+        var tool = new DbcNode("CanonicalTool");
         var document = new DbcDocument(
             [ecu, tool],
             [
@@ -610,8 +608,7 @@ public sealed class DbcWriterTests
                     "CanonicalStatus",
                     8,
                     ecu,
-                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool], sourceName: "SpeedShort")],
-                    sourceName: "StatusShort"),
+                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool])]),
             ]);
         var options = new DbcWriterOptions
         {

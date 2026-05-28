@@ -385,8 +385,8 @@ public sealed class DbcWriterReloadEquivalenceTests
     [TestMethod]
     public void WriteText_CommentsAndValueDescriptions_ReloadsEquivalentText()
     {
-        var ecu = new DbcNode("CanonicalEcu", "node comment \\ \"quoted\"", sourceName: "ECU");
-        var tool = new DbcNode("CanonicalTool", sourceName: "Tool");
+        var ecu = new DbcNode("CanonicalEcu", "node comment \\ \"quoted\"");
+        var tool = new DbcNode("CanonicalTool");
         var original = new DbcDocument(
             [ecu, tool],
             [
@@ -414,11 +414,9 @@ public sealed class DbcWriterReloadEquivalenceTests
                                 [0] = "Park",
                                 [1] = "Reverse",
                             },
-                            comment: "signal comment \\ \"quoted\"",
-                            sourceName: "ModeShort"),
+                            comment: "signal comment \\ \"quoted\""),
                     ],
-                    comment: "message comment \\ \"quoted\"",
-                    sourceName: "StatusShort"),
+                    comment: "message comment \\ \"quoted\""),
             ],
             comment: "document comment \\ \"quoted\"");
         var options = new DbcWriterOptions
@@ -545,7 +543,7 @@ public sealed class DbcWriterReloadEquivalenceTests
     }
 
     [TestMethod]
-    public void WriteText_ExtendedMultiplexingWithAliasCollision_UsesMultiplexorExportName()
+    public void WriteText_ExtendedMultiplexingWithCanonicalPolicy_UsesMultiplexorExportName()
     {
         var ecu = new DbcNode("ECU");
         var original = new DbcDocument(
@@ -557,7 +555,7 @@ public sealed class DbcWriterReloadEquivalenceTests
                     8,
                     ecu,
                     [
-                        new DbcSignal("ModeLong", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor, sourceName: "Mode"),
+                        new DbcSignal("ModeLong", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
                         new DbcSignal("Mode", 4, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu]),
                         new DbcSignal(
                             "Speed",
@@ -571,7 +569,7 @@ public sealed class DbcWriterReloadEquivalenceTests
                             250,
                             "km/h",
                             [ecu],
-                            DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(1, 3)])),
+                            DbcMultiplexing.Multiplexed("ModeLong", [new DbcMultiplexorRange(1, 3)])),
                     ]),
             ]);
         var options = new DbcWriterOptions

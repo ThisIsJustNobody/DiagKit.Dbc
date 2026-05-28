@@ -54,19 +54,21 @@ internal static partial class DbcWriteValidator
         foreach (var node in document.Nodes)
         {
             ValidateLongSymbolExport("Node", node.Name, DbcWriterNameFormatter.GetNodeExportName(node, options), diagnostics);
-            ValidateNodeMetadataOnce(node, metadataValidatedNodes, document, diagnostics);
+            ValidateNodeMetadataOnce(node, metadataValidatedNodes, document, options, diagnostics);
         }
 
         foreach (var variable in document.EnvironmentVariables.Values)
         {
-            ValidateLongSymbolExport("Environment variable", variable.Name, DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options), diagnostics);
+            var variableExportName = DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options);
+            ValidateLongSymbolExport("Environment variable", variable.Name, variableExportName, diagnostics);
+            ValidateReloadableNameAliases("Environment variable", variable.Name, variableExportName, variable.NameAliases, diagnostics);
             ValidateEnvironmentVariable(variable, diagnostics);
             ValidateAttributeValues("Environment variable", variable.Name, variable.Name, variable.Attributes, document, diagnostics);
             foreach (var accessNode in variable.AccessNodes)
             {
                 var accessNodeName = DbcWriterNameFormatter.GetNodeExportName(accessNode, options);
                 ValidateLongSymbolExport("Node", accessNode.Name, accessNodeName, diagnostics);
-                ValidateNodeMetadataOnce(accessNode, metadataValidatedNodes, document, diagnostics);
+                ValidateNodeMetadataOnce(accessNode, metadataValidatedNodes, document, options, diagnostics);
                 if (!IsValidIdentifier(accessNodeName))
                 {
                     diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Environment variable '{variable.Name}' access node name '{accessNodeName}' is not a valid DBC identifier."));
@@ -76,7 +78,9 @@ internal static partial class DbcWriteValidator
 
         foreach (var message in document.Messages)
         {
-            ValidateLongSymbolExport("Message", message.Name, DbcWriterNameFormatter.GetMessageExportName(message, options), diagnostics);
+            var messageExportName = DbcWriterNameFormatter.GetMessageExportName(message, options);
+            ValidateLongSymbolExport("Message", message.Name, messageExportName, diagnostics);
+            ValidateReloadableNameAliases("Message", message.Name, messageExportName, message.NameAliases, diagnostics);
             ValidateMessageMetadata(message, document, diagnostics);
             ValidateTransmitters(message, options, metadataValidatedNodes, document, diagnostics);
 
@@ -90,7 +94,7 @@ internal static partial class DbcWriteValidator
 
             var transmitterName = DbcWriterNameFormatter.GetNodeExportName(message.PrimaryTransmitter, options);
             ValidateLongSymbolExport("Node", message.PrimaryTransmitter.Name, transmitterName, diagnostics);
-            ValidateNodeMetadataOnce(message.PrimaryTransmitter, metadataValidatedNodes, document, diagnostics);
+            ValidateNodeMetadataOnce(message.PrimaryTransmitter, metadataValidatedNodes, document, options, diagnostics);
             if (!IsValidIdentifier(transmitterName))
             {
                 diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Message '{message.Name}' transmitter name '{transmitterName}' is not a valid DBC identifier."));
@@ -105,7 +109,9 @@ internal static partial class DbcWriteValidator
                 diagnostics);
             foreach (var signal in message.Signals)
             {
-                ValidateLongSymbolExport("Signal", signal.Name, DbcWriterNameFormatter.GetSignalExportName(signal, options), diagnostics);
+                var signalExportName = DbcWriterNameFormatter.GetSignalExportName(signal, options);
+                ValidateLongSymbolExport("Signal", signal.Name, signalExportName, diagnostics);
+                ValidateReloadableNameAliases("Signal", $"{message.Name}.{signal.Name}", signalExportName, signal.NameAliases, diagnostics);
                 ValidateSignalMetadata(message, signal, document, diagnostics);
                 ValidateSignal(message, signal, options, diagnostics);
 
@@ -113,7 +119,7 @@ internal static partial class DbcWriteValidator
                 {
                     var receiverName = DbcWriterNameFormatter.GetNodeExportName(receiver, options);
                     ValidateLongSymbolExport("Node", receiver.Name, receiverName, diagnostics);
-                    ValidateNodeMetadataOnce(receiver, metadataValidatedNodes, document, diagnostics);
+                    ValidateNodeMetadataOnce(receiver, metadataValidatedNodes, document, options, diagnostics);
                     if (!IsValidIdentifier(receiverName))
                     {
                         diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Signal '{message.Name}.{signal.Name}' receiver name '{receiverName}' is not a valid DBC identifier."));
@@ -291,7 +297,7 @@ internal static partial class DbcWriteValidator
         {
             var transmitterName = DbcWriterNameFormatter.GetNodeExportName(transmitter, options);
             ValidateLongSymbolExport("Node", transmitter.Name, transmitterName, diagnostics);
-            ValidateNodeMetadataOnce(transmitter, metadataValidatedNodes, document, diagnostics);
+            ValidateNodeMetadataOnce(transmitter, metadataValidatedNodes, document, options, diagnostics);
             if (!IsValidIdentifier(transmitterName))
             {
                 diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Message '{message.Name}' transmitter name '{transmitterName}' is not a valid DBC identifier."));
@@ -549,12 +555,15 @@ internal static partial class DbcWriteValidator
         DbcNode node,
         HashSet<DbcNode> validatedNodes,
         DbcDocument document,
+        DbcWriterOptions options,
         List<DbcDiagnostic> diagnostics)
     {
         if (!validatedNodes.Add(node))
         {
             return;
         }
+
+        ValidateReloadableNameAliases("Node", node.Name, DbcWriterNameFormatter.GetNodeExportName(node, options), node.NameAliases, diagnostics);
 
         if (node.Attributes.Count > 0)
         {
@@ -569,23 +578,36 @@ internal static partial class DbcWriteValidator
         ValidateAttributeValues("Message", message.Name, message.Name, message.Attributes, document, diagnostics);
         ValidateOptionalQuotedText("Message", message.Name, "comment", message.Comment, diagnostics);
 
-        if (message.CycleTimeMs.HasValue &&
-            (!TryGetAttributeInt32(message.Attributes, "GenMsgCycleTime", out var cycleTimeMs) || cycleTimeMs != message.CycleTimeMs.Value))
-        {
-            AddUnsupportedMetadata($"Message '{message.Name}' cycle time metadata is not backed by a matching GenMsgCycleTime attribute.", diagnostics);
-        }
-
-        if (message.SendType != DbcSendType.Unknown &&
-            (!TryGetAttributeSendType(message.Attributes, "GenMsgSendType", out var sendType) || sendType != message.SendType))
-        {
-            AddUnsupportedMetadata($"Message '{message.Name}' send type metadata is not backed by a matching GenMsgSendType attribute.", diagnostics);
-        }
-
-        if (message.TimeoutTimeMs.HasValue &&
-            (!TryGetAttributeInt32(message.Attributes, "GenMsgTimeoutTime", out var timeoutTimeMs) || timeoutTimeMs != message.TimeoutTimeMs.Value))
-        {
-            AddUnsupportedMetadata($"Message '{message.Name}' timeout metadata is not backed by a matching GenMsgTimeoutTime attribute.", diagnostics);
-        }
+        ValidateMappedInt32Metadata(
+            "Message",
+            message.Name,
+            "cycle time",
+            "GenMsgCycleTime",
+            message.CycleTimeMs,
+            message.Attributes,
+            document,
+            useDefault: false,
+            diagnostics);
+        ValidateMappedSendTypeMetadata(
+            "Message",
+            message.Name,
+            "send type",
+            "GenMsgSendType",
+            message.SendType,
+            message.Attributes,
+            document,
+            useDefault: true,
+            diagnostics);
+        ValidateMappedInt32Metadata(
+            "Message",
+            message.Name,
+            "timeout",
+            "GenMsgTimeoutTime",
+            message.TimeoutTimeMs,
+            message.Attributes,
+            document,
+            useDefault: true,
+            diagnostics);
 
         ValidateFlexibleDataRateMetadata(message, diagnostics);
 
@@ -626,23 +648,34 @@ internal static partial class DbcWriteValidator
                 diagnostics);
         }
 
-        if (signal.InitialValue.HasValue &&
-            (!TryGetAttributeDouble(signal.Attributes, "GenSigStartValue", out var initialValue) || initialValue != signal.InitialValue.Value))
-        {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' initial value metadata is not backed by a matching GenSigStartValue attribute.", diagnostics);
-        }
-
-        if (signal.SendType != DbcSendType.Unknown &&
-            (!TryGetAttributeSendType(signal.Attributes, "GenSigSendType", out var sendType) || sendType != signal.SendType))
-        {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' send type metadata is not backed by a matching GenSigSendType attribute.", diagnostics);
-        }
-
-        if (signal.TimeoutTimeMs.HasValue &&
-            (!TryGetAttributeInt32(signal.Attributes, "GenSigTimeoutTime", out var timeoutTimeMs) || timeoutTimeMs != signal.TimeoutTimeMs.Value))
-        {
-            AddUnsupportedMetadata($"Signal '{message.Name}.{signal.Name}' timeout metadata is not backed by a matching GenSigTimeoutTime attribute.", diagnostics);
-        }
+        ValidateMappedDoubleMetadata(
+            "Signal",
+            $"{message.Name}.{signal.Name}",
+            "initial value",
+            "GenSigStartValue",
+            signal.InitialValue,
+            signal.Attributes,
+            diagnostics);
+        ValidateMappedSendTypeMetadata(
+            "Signal",
+            $"{message.Name}.{signal.Name}",
+            "send type",
+            "GenSigSendType",
+            signal.SendType,
+            signal.Attributes,
+            document,
+            useDefault: true,
+            diagnostics);
+        ValidateMappedInt32Metadata(
+            "Signal",
+            $"{message.Name}.{signal.Name}",
+            "timeout",
+            "GenSigTimeoutTime",
+            signal.TimeoutTimeMs,
+            signal.Attributes,
+            document,
+            useDefault: true,
+            diagnostics);
     }
 
     private static void ValidateSignal(DbcMessage message, DbcSignal signal, DbcWriterOptions options, List<DbcDiagnostic> diagnostics)
@@ -671,6 +704,141 @@ internal static partial class DbcWriteValidator
         }
 
         ValidateQuotedText(objectKind, canonicalName, "Vector long-symbol name", canonicalName, diagnostics);
+    }
+
+    private static void ValidateReloadableNameAliases(
+        string objectKind,
+        string objectDisplayName,
+        string exportName,
+        IReadOnlyList<string> aliases,
+        List<DbcDiagnostic> diagnostics)
+    {
+        foreach (var alias in aliases)
+        {
+            if (string.Equals(alias, exportName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            AddUnsupportedMetadata(
+                $"{objectKind} '{objectDisplayName}' name alias '{alias}' cannot be emitted by normalized DBC export and would be lost after reload.",
+                diagnostics);
+        }
+    }
+
+    private static void ValidateMappedInt32Metadata(
+        string objectKind,
+        string objectName,
+        string semanticName,
+        string attributeName,
+        int? semanticValue,
+        IReadOnlyDictionary<string, DbcAttributeValue> attributes,
+        DbcDocument document,
+        bool useDefault,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (TryGetAttributeInt32(attributes, attributeName, out var attributeValue))
+        {
+            if (!semanticValue.HasValue || semanticValue.Value != attributeValue)
+            {
+                AddUnsupportedMetadata(
+                    $"{objectKind} '{objectName}' {semanticName} metadata would reload from {attributeName} attribute, but the semantic field does not match.",
+                    diagnostics);
+            }
+
+            return;
+        }
+
+        if (useDefault && TryGetDefaultInt32(document, attributeName, out var defaultValue))
+        {
+            if (!semanticValue.HasValue || semanticValue.Value != defaultValue)
+            {
+                AddUnsupportedMetadata(
+                    $"{objectKind} '{objectName}' {semanticName} metadata would reload from {attributeName} default, but the semantic field does not match.",
+                    diagnostics);
+            }
+
+            return;
+        }
+
+        if (semanticValue.HasValue)
+        {
+            AddUnsupportedMetadata(
+                $"{objectKind} '{objectName}' {semanticName} metadata is not backed by a matching {attributeName} attribute or default.",
+                diagnostics);
+        }
+    }
+
+    private static void ValidateMappedDoubleMetadata(
+        string objectKind,
+        string objectName,
+        string semanticName,
+        string attributeName,
+        double? semanticValue,
+        IReadOnlyDictionary<string, DbcAttributeValue> attributes,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (TryGetAttributeDouble(attributes, attributeName, out var attributeValue))
+        {
+            if (!semanticValue.HasValue || semanticValue.Value != attributeValue)
+            {
+                AddUnsupportedMetadata(
+                    $"{objectKind} '{objectName}' {semanticName} metadata would reload from {attributeName} attribute, but the semantic field does not match.",
+                    diagnostics);
+            }
+
+            return;
+        }
+
+        if (semanticValue.HasValue)
+        {
+            AddUnsupportedMetadata(
+                $"{objectKind} '{objectName}' {semanticName} metadata is not backed by a matching {attributeName} attribute.",
+                diagnostics);
+        }
+    }
+
+    private static void ValidateMappedSendTypeMetadata(
+        string objectKind,
+        string objectName,
+        string semanticName,
+        string attributeName,
+        DbcSendType semanticValue,
+        IReadOnlyDictionary<string, DbcAttributeValue> attributes,
+        DbcDocument document,
+        bool useDefault,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (TryGetAttributeSendType(attributes, attributeName, out var attributeValue))
+        {
+            if (semanticValue != attributeValue)
+            {
+                AddUnsupportedMetadata(
+                    $"{objectKind} '{objectName}' {semanticName} metadata would reload from {attributeName} attribute, but the semantic field does not match.",
+                    diagnostics);
+            }
+
+            return;
+        }
+
+        if (useDefault && TryGetDefaultSendType(document, attributeName, out var defaultValue))
+        {
+            if (semanticValue != defaultValue)
+            {
+                AddUnsupportedMetadata(
+                    $"{objectKind} '{objectName}' {semanticName} metadata would reload from {attributeName} default, but the semantic field does not match.",
+                    diagnostics);
+            }
+
+            return;
+        }
+
+        if (semanticValue != DbcSendType.Unknown)
+        {
+            AddUnsupportedMetadata(
+                $"{objectKind} '{objectName}' {semanticName} metadata is not backed by a matching {attributeName} attribute or default.",
+                diagnostics);
+        }
     }
 
     private static void ValidateAttributeValues(
@@ -1081,6 +1249,19 @@ internal static partial class DbcWriteValidator
         return false;
     }
 
+    private static bool TryGetDefaultInt32(DbcDocument document, string name, out int value)
+    {
+        if (document.AttributeDefinitions.TryGetValue(name, out var definition) &&
+            definition.DefaultValue is not null &&
+            definition.DefaultValue.TryGetInt32(out value))
+        {
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
     private static bool TryGetAttributeDouble(
         IReadOnlyDictionary<string, DbcAttributeValue> attributes,
         string name,
@@ -1104,6 +1285,19 @@ internal static partial class DbcWriteValidator
         if (attributes.TryGetValue(name, out var attribute))
         {
             var text = attribute.Value as string ?? attribute.RawValue;
+            return TryParseSendType(text, out sendType);
+        }
+
+        sendType = DbcSendType.Unknown;
+        return false;
+    }
+
+    private static bool TryGetDefaultSendType(DbcDocument document, string name, out DbcSendType sendType)
+    {
+        if (document.AttributeDefinitions.TryGetValue(name, out var definition) &&
+            definition.DefaultValue is not null)
+        {
+            var text = definition.DefaultValue.Value as string ?? definition.DefaultValue.RawValue;
             return TryParseSendType(text, out sendType);
         }
 
