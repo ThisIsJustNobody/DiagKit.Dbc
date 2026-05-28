@@ -363,7 +363,7 @@ public static class DbcWriter
             {
                 if (signal.Multiplexing.SwitchRanges.Count == 0 ||
                     string.IsNullOrEmpty(signal.Multiplexing.MultiplexorSignalName) ||
-                    !message.TryResolveSignal(signal.Multiplexing.MultiplexorSignalName, out var multiplexor))
+                    !DbcWriterNameFormatter.TryResolveMultiplexorSignal(message, signal.Multiplexing.MultiplexorSignalName, options, out var multiplexor))
                 {
                     continue;
                 }
@@ -462,5 +462,56 @@ internal static class DbcWriterNameFormatter
             DbcWriteValidator.IsValidIdentifier(signal.Name)
                 ? signal.Name
                 : signal.SourceName;
+    }
+
+    internal static bool TryResolveMultiplexorSignal(
+        DbcMessage message,
+        string multiplexorSignalName,
+        DbcWriterOptions options,
+        out DbcSignal multiplexor)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentException.ThrowIfNullOrWhiteSpace(multiplexorSignalName);
+        ArgumentNullException.ThrowIfNull(options);
+
+        DbcSignal? aliasMatch = null;
+        var aliasMatchCount = 0;
+        DbcSignal? exportNameMatch = null;
+        var exportNameMatchCount = 0;
+
+        foreach (var candidate in message.Signals)
+        {
+            if (candidate.Multiplexing.Role != DbcMultiplexingRole.Multiplexor)
+            {
+                continue;
+            }
+
+            if (DbcNameLookup.Matches(candidate.Name, candidate.NameAliases, multiplexorSignalName))
+            {
+                aliasMatch = candidate;
+                aliasMatchCount++;
+            }
+
+            if (string.Equals(GetSignalExportName(candidate, options), multiplexorSignalName, StringComparison.Ordinal))
+            {
+                exportNameMatch = candidate;
+                exportNameMatchCount++;
+            }
+        }
+
+        if (aliasMatchCount == 1)
+        {
+            multiplexor = aliasMatch!;
+            return true;
+        }
+
+        if (aliasMatchCount == 0 && exportNameMatchCount == 1)
+        {
+            multiplexor = exportNameMatch!;
+            return true;
+        }
+
+        multiplexor = null!;
+        return false;
     }
 }

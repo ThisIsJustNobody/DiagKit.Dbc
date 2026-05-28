@@ -59,7 +59,7 @@ internal static partial class DbcWriteValidator
             {
                 ValidateLongSymbolExport("Signal", signal.Name, DbcWriterNameFormatter.GetSignalExportName(signal, options), diagnostics);
                 ValidateSignalMetadata(message, signal, diagnostics);
-                ValidateSignal(message, signal, diagnostics);
+                ValidateSignal(message, signal, options, diagnostics);
 
                 foreach (var receiver in signal.Receivers)
                 {
@@ -248,11 +248,11 @@ internal static partial class DbcWriteValidator
         }
     }
 
-    private static void ValidateSignal(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
+    private static void ValidateSignal(DbcMessage message, DbcSignal signal, DbcWriterOptions options, List<DbcDiagnostic> diagnostics)
     {
         ValidateSignalBitRange(message, signal, diagnostics);
 
-        if (HasUnsupportedMultiplexing(message, signal))
+        if (HasUnsupportedMultiplexing(message, signal, options))
         {
             diagnostics.Add(Error(
                 "DBC_WRITE_UNSUPPORTED_MULTIPLEXING",
@@ -325,7 +325,7 @@ internal static partial class DbcWriteValidator
         return true;
     }
 
-    private static bool HasUnsupportedMultiplexing(DbcMessage message, DbcSignal signal)
+    private static bool HasUnsupportedMultiplexing(DbcMessage message, DbcSignal signal, DbcWriterOptions options)
     {
         var multiplexing = signal.Multiplexing;
         var hasExtendedFields = multiplexing.SwitchRanges.Count > 0 ||
@@ -337,13 +337,13 @@ internal static partial class DbcWriteValidator
             case DbcMultiplexingRole.Multiplexor:
                 return multiplexing.SwitchValue is not null || hasExtendedFields;
             case DbcMultiplexingRole.Multiplexed:
-                return HasUnsupportedMultiplexedState(message, signal);
+                return HasUnsupportedMultiplexedState(message, signal, options);
             default:
                 return true;
         }
     }
 
-    private static bool HasUnsupportedMultiplexedState(DbcMessage message, DbcSignal signal)
+    private static bool HasUnsupportedMultiplexedState(DbcMessage message, DbcSignal signal, DbcWriterOptions options)
     {
         var multiplexing = signal.Multiplexing;
         if (multiplexing.SwitchValue is < 0)
@@ -362,7 +362,7 @@ internal static partial class DbcWriteValidator
         }
 
         if (string.IsNullOrEmpty(multiplexing.MultiplexorSignalName) ||
-            !message.TryResolveSignal(multiplexing.MultiplexorSignalName, out var multiplexor))
+            !DbcWriterNameFormatter.TryResolveMultiplexorSignal(message, multiplexing.MultiplexorSignalName, options, out var multiplexor))
         {
             return true;
         }

@@ -166,6 +166,55 @@ public sealed class DbcWriterReloadEquivalenceTests
     }
 
     [TestMethod]
+    public void WriteText_ExtendedMultiplexingWithAliasCollision_UsesMultiplexorExportName()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(402),
+                    "AliasMuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("ModeLong", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor, sourceName: "Mode"),
+                        new DbcSignal("Mode", 4, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu]),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(1, 3)])),
+                    ]),
+            ]);
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(original, options);
+
+        StringAssert.Contains(text, " SG_ ModeLong M : 0|4@1+ (1,0) [0|15] \"\" ECU");
+        StringAssert.Contains(text, " SG_ Mode : 4|4@1+ (1,0) [0|15] \"\" ECU");
+        StringAssert.Contains(text, "SG_MUL_VAL_ 402 Speed ModeLong 1-3;");
+        var signal = DbcLoader.LoadTextDocumentOrThrow(text)
+            .ResolveMessage("AliasMuxStatus")
+            .ResolveSignal("Speed");
+        Assert.AreEqual("ModeLong", signal.Multiplexing.MultiplexorSignalName);
+        CollectionAssert.AreEqual(
+            new[] { new DbcMultiplexorRange(1, 3) },
+            signal.Multiplexing.SwitchRanges.ToArray());
+    }
+
+    [TestMethod]
     public void WriteText_BasicMultiplexingWithExtendedRanges_EmitsTokenAndSgMulVal()
     {
         var ecu = new DbcNode("ECU");
