@@ -367,8 +367,26 @@ internal static partial class DbcWriteValidator
             return true;
         }
 
+        if (HasInvalidMultiplexingRange(multiplexing.SwitchRanges))
+        {
+            return true;
+        }
+
         return ReferenceEquals(multiplexor, signal) ||
             multiplexor.Multiplexing.Role != DbcMultiplexingRole.Multiplexor;
+    }
+
+    private static bool HasInvalidMultiplexingRange(IReadOnlyList<DbcMultiplexorRange> ranges)
+    {
+        foreach (var range in ranges)
+        {
+            if (range.Minimum < 0 || range.Maximum < range.Minimum)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void ValidateFiniteSignalNumber(

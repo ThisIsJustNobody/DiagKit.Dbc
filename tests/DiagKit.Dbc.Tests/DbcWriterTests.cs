@@ -459,6 +459,82 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
+    public void WriteText_ExtendedMultiplexingWithNegativeRange_ReturnsUnsupportedMultiplexingError()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(-1, 3)])),
+                    ]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_MULTIPLEXING");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
+    public void WriteText_ExtendedMultiplexingWithInvertedRange_ReturnsUnsupportedMultiplexingError()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(5, 3)])),
+                    ]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_MULTIPLEXING");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
     public void WriteText_InvalidSignalBitRanges_ReturnsInvalidSignalBitRangeError()
     {
         (string SignalName, int DataLength, int StartBit, int BitLength, DbcByteOrder ByteOrder)[] cases =
