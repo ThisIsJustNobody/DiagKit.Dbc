@@ -225,57 +225,86 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
-    public void WriteText_DefaultPolicyWithLongSymbolExport_ReturnsUnsupportedLongSymbolError()
+    public void WriteText_DefaultPolicyWithLongSymbolExport_EmitsLongSymbolAttributesAndReloadsAliases()
     {
-        var nodeLongSymbol = new DbcNode("CanonicalEcu", sourceName: "ECU");
-        var nodeCase = new DbcDocument([nodeLongSymbol], []);
-
-        var messageEcu = new DbcNode("ECU");
-        var messageCase = new DbcDocument(
-            [messageEcu],
-            [
-                new DbcMessage(
-                    new DbcRawMessageId(256),
-                    "CanonicalStatus",
-                    8,
-                    messageEcu,
-                    [],
-                    sourceName: "Status"),
-            ]);
-
-        var signalEcu = new DbcNode("ECU");
-        var signalCase = new DbcDocument(
-            [signalEcu],
-            [
-                new DbcMessage(
-                    new DbcRawMessageId(256),
-                    "VehicleStatus",
-                    8,
-                    signalEcu,
-                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [signalEcu], sourceName: "Speed")]),
-            ]);
-
-        var referencedReceiver = new DbcNode("CanonicalTool", sourceName: "Tool");
-        var referencedNodeCase = new DbcDocument(
-            [signalEcu],
+        var ecu = new DbcNode("VeryLongEngineControllerName", sourceName: "ECU");
+        var document = new DbcDocument(
+            [ecu],
             [
                 new DbcMessage(
                     new DbcRawMessageId(512),
-                    "ReceiverStatus",
+                    "VeryLongVehicleStatusMessageName",
                     8,
-                    signalEcu,
-                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [referencedReceiver])]),
+                    ecu,
+                    [],
+                    sourceName: "VehicleStatusShort"),
             ]);
 
-        foreach (var document in new[] { nodeCase, messageCase, signalCase, referencedNodeCase })
-        {
-            var result = DbcWriter.WriteText(document);
+        var text = DbcWriter.WriteTextOrThrow(document);
 
-            Assert.IsFalse(result.Succeeded);
-            Assert.IsNull(result.Text);
-            var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL");
-            Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
-        }
+        StringAssert.Contains(text, "BU_: ECU");
+        StringAssert.Contains(text, "BO_ 512 VehicleStatusShort: 8 ECU");
+        StringAssert.Contains(text, "BA_DEF_ BU_ \"SystemNodeLongSymbol\" STRING;");
+        StringAssert.Contains(text, "BA_DEF_ BO_ \"SystemMessageLongSymbol\" STRING;");
+        StringAssert.Contains(text, "BA_ \"SystemNodeLongSymbol\" BU_ ECU \"VeryLongEngineControllerName\";");
+        StringAssert.Contains(text, "BA_ \"SystemMessageLongSymbol\" BO_ 512 \"VeryLongVehicleStatusMessageName\";");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("VeryLongEngineControllerName", out _));
+        Assert.IsTrue(reloaded.TryResolveNode("ECU", out _));
+        Assert.IsTrue(reloaded.TryResolveMessage("VeryLongVehicleStatusMessageName", out _));
+        Assert.IsTrue(reloaded.TryResolveMessage("VehicleStatusShort", out _));
+    }
+
+    [TestMethod]
+    public void WriteText_SignalSourceNameDiffersFromCanonicalName_EmitsLongSymbolAttributeAndReloadsAliases()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(768),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("VeryLongVehicleSpeedSignalName", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [ecu], sourceName: "VehSpdShort")]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, " SG_ VehSpdShort : 0|16@1+ (1,0) [0|250] \"km/h\" ECU");
+        StringAssert.Contains(text, "BA_DEF_ SG_ \"SystemSignalLongSymbol\" STRING;");
+        StringAssert.Contains(text, "BA_ \"SystemSignalLongSymbol\" SG_ 768 VehSpdShort \"VeryLongVehicleSpeedSignalName\";");
+
+        var message = DbcLoader.LoadTextDocumentOrThrow(text).ResolveMessage("VehicleStatus");
+        Assert.IsTrue(message.TryResolveSignal("VeryLongVehicleSpeedSignalName", out _));
+        Assert.IsTrue(message.TryResolveSignal("VehSpdShort", out _));
+    }
+
+    [TestMethod]
+    public void WriteText_ReferencedOnlyNodeSourceNameDiffersFromCanonicalName_EmitsLongSymbolAttribute()
+    {
+        var ecu = new DbcNode("ECU");
+        var receiver = new DbcNode("VeryLongDiagnosticsToolNodeName", sourceName: "Tool");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(769),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Mode", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [receiver])]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, " SG_ Mode : 0|8@1+ (1,0) [0|15] \"\" Tool");
+        StringAssert.Contains(text, "BA_ \"SystemNodeLongSymbol\" BU_ Tool \"VeryLongDiagnosticsToolNodeName\";");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("VeryLongDiagnosticsToolNodeName", out _));
+        Assert.IsTrue(reloaded.TryResolveNode("Tool", out _));
     }
 
     [TestMethod]

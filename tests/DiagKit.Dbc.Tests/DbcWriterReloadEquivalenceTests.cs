@@ -4,6 +4,71 @@ namespace DiagKit.Dbc.Tests;
 public sealed class DbcWriterReloadEquivalenceTests
 {
     [TestMethod]
+    public void WriteText_LongSymbolNames_ReloadsCanonicalNamesAndSourceAliases()
+    {
+        var ecu = new DbcNode("VeryLongEngineControllerName", sourceName: "ECU");
+        var tool = new DbcNode("Tool");
+        var signal = new DbcSignal(
+            "VeryLongVehicleSpeedSignalName",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [tool],
+            sourceName: "VehSpdShort");
+        var message = new DbcMessage(
+            new DbcRawMessageId(512),
+            "VeryLongVehicleStatusMessageName",
+            8,
+            ecu,
+            [signal],
+            sourceName: "VehicleStatusShort");
+        var variable = new DbcEnvironmentVariable(
+            "Environment_Variable_Long_Name",
+            0,
+            0,
+            1,
+            "",
+            0,
+            1,
+            "DUMMY_NODE_VECTOR0",
+            sourceName: "EnvShort");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [message],
+            environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
+            {
+                [variable.Name] = variable,
+            });
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BU_: ECU Tool");
+        StringAssert.Contains(text, "BO_ 512 VehicleStatusShort: 8 ECU");
+        StringAssert.Contains(text, " SG_ VehSpdShort : 0|16@1+ (1,0) [0|250] \"km/h\" Tool");
+        StringAssert.Contains(text, "EV_ EnvShort : 0 [0|1] \"\" 0 1 DUMMY_NODE_VECTOR0;");
+        StringAssert.Contains(text, "BA_ \"SystemNodeLongSymbol\" BU_ ECU \"VeryLongEngineControllerName\";");
+        StringAssert.Contains(text, "BA_ \"SystemMessageLongSymbol\" BO_ 512 \"VeryLongVehicleStatusMessageName\";");
+        StringAssert.Contains(text, "BA_ \"SystemSignalLongSymbol\" SG_ 512 VehSpdShort \"VeryLongVehicleSpeedSignalName\";");
+        StringAssert.Contains(text, "BA_ \"SystemEnvVarLongSymbol\" EV_ EnvShort \"Environment_Variable_Long_Name\";");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("VeryLongEngineControllerName", out _));
+        Assert.IsTrue(reloaded.TryResolveNode("ECU", out _));
+        Assert.IsTrue(reloaded.TryResolveMessage("VeryLongVehicleStatusMessageName", out var reloadedMessage));
+        Assert.IsTrue(reloaded.TryResolveMessage("VehicleStatusShort", out _));
+        Assert.IsTrue(reloadedMessage.TryResolveSignal("VeryLongVehicleSpeedSignalName", out _));
+        Assert.IsTrue(reloadedMessage.TryResolveSignal("VehSpdShort", out _));
+        Assert.IsTrue(reloaded.TryResolveEnvironmentVariable("Environment_Variable_Long_Name", out _));
+        Assert.IsTrue(reloaded.TryResolveEnvironmentVariable("EnvShort", out _));
+    }
+
+    [TestMethod]
     public void WriteText_Attributes_ReloadsDefinitionsDefaultsValuesAndSemanticMappings()
     {
         var ecu = new DbcNode(

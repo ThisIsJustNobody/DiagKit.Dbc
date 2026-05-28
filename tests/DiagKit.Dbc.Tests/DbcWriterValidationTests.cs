@@ -4,7 +4,7 @@ namespace DiagKit.Dbc.Tests;
 public sealed class DbcWriterValidationTests
 {
     [TestMethod]
-    public void WriteText_VectorLongSymbolAttributeDefinitions_ReturnUnsupportedLongSymbolError()
+    public void WriteText_VectorLongSymbolAttributeDefinitions_SucceedAndEmitOnce()
     {
         var definitions = new Dictionary<string, DbcAttributeDefinition>
         {
@@ -17,21 +17,26 @@ public sealed class DbcWriterValidationTests
 
         var result = DbcWriter.WriteText(document);
 
-        Assert.IsFalse(result.Succeeded);
-        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL"));
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var text = result.GetTextOrThrow();
+        Assert.AreEqual(1, CountOccurrences(text, "BA_DEF_ BU_ \"SystemNodeLongSymbol\" STRING;"));
+        Assert.AreEqual(1, CountOccurrences(text, "BA_DEF_ BO_ \"SystemMessageLongSymbol\" STRING;"));
+        Assert.AreEqual(1, CountOccurrences(text, "BA_DEF_ SG_ \"SystemSignalLongSymbol\" STRING;"));
+        Assert.AreEqual(1, CountOccurrences(text, "BA_DEF_ EV_ \"SystemEnvVarLongSymbol\" STRING;"));
     }
 
     [TestMethod]
-    public void WriteText_VectorLongSymbolAttributeValues_ReturnUnsupportedLongSymbolError()
+    public void WriteText_VectorLongSymbolAttributeValues_MatchingCanonicalNamesSucceedAndEmitOnce()
     {
         var ecu = new DbcNode(
-            "ECU",
+            "EngineControlUnit",
+            sourceName: "ECU",
             attributes: new Dictionary<string, DbcAttributeValue>
             {
                 ["SystemNodeLongSymbol"] = new("SystemNodeLongSymbol", DbcAttributeValueKind.String, "EngineControlUnit", "EngineControlUnit"),
             });
         var signal = new DbcSignal(
-            "Mode",
+            "OperatingMode",
             0,
             8,
             DbcByteOrder.Intel,
@@ -45,19 +50,21 @@ public sealed class DbcWriterValidationTests
             attributes: new Dictionary<string, DbcAttributeValue>
             {
                 ["SystemSignalLongSymbol"] = new("SystemSignalLongSymbol", DbcAttributeValueKind.String, "OperatingMode", "OperatingMode"),
-            });
+            },
+            sourceName: "Mode");
         var message = new DbcMessage(
             new DbcRawMessageId(256),
-            "Status",
+            "StatusMessage",
             8,
             ecu,
             [signal],
             attributes: new Dictionary<string, DbcAttributeValue>
             {
                 ["SystemMessageLongSymbol"] = new("SystemMessageLongSymbol", DbcAttributeValueKind.String, "StatusMessage", "StatusMessage"),
-            });
+            },
+            sourceName: "Status");
         var environmentVariable = new DbcEnvironmentVariable(
-            "Ignition",
+            "IgnitionState",
             0,
             0,
             1,
@@ -68,14 +75,11 @@ public sealed class DbcWriterValidationTests
             attributes: new Dictionary<string, DbcAttributeValue>
             {
                 ["SystemEnvVarLongSymbol"] = new("SystemEnvVarLongSymbol", DbcAttributeValueKind.String, "IgnitionState", "IgnitionState"),
-            });
+            },
+            sourceName: "Ignition");
         var document = new DbcDocument(
             [ecu],
             [message],
-            attributes: new Dictionary<string, DbcAttributeValue>
-            {
-                ["SystemNodeLongSymbol"] = new("SystemNodeLongSymbol", DbcAttributeValueKind.String, "NetworkLevel", "NetworkLevel"),
-            },
             environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
             {
                 [environmentVariable.Name] = environmentVariable,
@@ -83,8 +87,72 @@ public sealed class DbcWriterValidationTests
 
         var result = DbcWriter.WriteText(document);
 
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var text = result.GetTextOrThrow();
+        Assert.AreEqual(1, CountOccurrences(text, "BA_ \"SystemNodeLongSymbol\" BU_ ECU \"EngineControlUnit\";"));
+        Assert.AreEqual(1, CountOccurrences(text, "BA_ \"SystemMessageLongSymbol\" BO_ 256 \"StatusMessage\";"));
+        Assert.AreEqual(1, CountOccurrences(text, "BA_ \"SystemSignalLongSymbol\" SG_ 256 Mode \"OperatingMode\";"));
+        Assert.AreEqual(1, CountOccurrences(text, "BA_ \"SystemEnvVarLongSymbol\" EV_ Ignition \"IgnitionState\";"));
+    }
+
+    [TestMethod]
+    public void WriteText_VectorLongSymbolAttributeValues_ConflictingExplicitValueReturnsConflictError()
+    {
+        var ecu = new DbcNode(
+            "ECU",
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["SystemNodeLongSymbol"] = new("SystemNodeLongSymbol", DbcAttributeValueKind.String, "OtherName", "OtherName"),
+            });
+        var document = new DbcDocument([ecu], []);
+
+        var result = DbcWriter.WriteText(document);
+
         Assert.IsFalse(result.Succeeded);
-        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL"));
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_LONG_SYMBOL_CONFLICT"));
+    }
+
+    [TestMethod]
+    public void WriteText_VectorLongSymbolAttributeDefinitionWrongOwnerOrKindReturnsConflictError()
+    {
+        var cases = new[]
+        {
+            new DbcAttributeDefinition("SystemNodeLongSymbol", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.String),
+            new DbcAttributeDefinition("SystemMessageLongSymbol", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.Integer, minimum: 0, maximum: 1),
+        };
+
+        foreach (var definition in cases)
+        {
+            var document = new DbcDocument(
+                [],
+                [],
+                new Dictionary<string, DbcAttributeDefinition>
+                {
+                    [definition.Name] = definition,
+                });
+
+            var result = DbcWriter.WriteText(document);
+
+            Assert.IsFalse(result.Succeeded, definition.Name);
+            Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_LONG_SYMBOL_CONFLICT"), definition.Name);
+        }
+    }
+
+    [TestMethod]
+    public void WriteText_VectorLongSymbolNetworkValueReturnsConflictError()
+    {
+        var document = new DbcDocument(
+            [],
+            [],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["SystemNodeLongSymbol"] = new("SystemNodeLongSymbol", DbcAttributeValueKind.String, "NetworkLevel", "NetworkLevel"),
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_LONG_SYMBOL_CONFLICT"));
     }
 
     [TestMethod]
@@ -702,7 +770,7 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
-    public void WriteText_EnvironmentVariableSourceNameDiffersFromCanonicalName_ReturnsUnsupportedLongSymbolError()
+    public void WriteText_EnvironmentVariableSourceNameDiffersFromCanonicalName_EmitsLongSymbolAndReloadsAliases()
     {
         var variable = new DbcEnvironmentVariable(
             "Environment_Variable_Long_Name",
@@ -715,7 +783,7 @@ public sealed class DbcWriterValidationTests
             "DUMMY_NODE_VECTOR0",
             sourceName: "EnvShort");
         var document = new DbcDocument(
-            [],
+            [new DbcNode("ECU")],
             [],
             environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
             {
@@ -724,8 +792,14 @@ public sealed class DbcWriterValidationTests
 
         var result = DbcWriter.WriteText(document);
 
-        Assert.IsFalse(result.Succeeded);
-        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL"));
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var text = result.GetTextOrThrow();
+        StringAssert.Contains(text, "EV_ EnvShort : 0 [0|1] \"\" 0 1 DUMMY_NODE_VECTOR0;");
+        StringAssert.Contains(text, "BA_DEF_ EV_ \"SystemEnvVarLongSymbol\" STRING;");
+        StringAssert.Contains(text, "BA_ \"SystemEnvVarLongSymbol\" EV_ EnvShort \"Environment_Variable_Long_Name\";");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveEnvironmentVariable("Environment_Variable_Long_Name", out _));
+        Assert.IsTrue(reloaded.TryResolveEnvironmentVariable("EnvShort", out _));
     }
 
     [TestMethod]
@@ -757,5 +831,18 @@ public sealed class DbcWriterValidationTests
             DbcAttributeOwnerKind.Message,
             DbcAttributeValueKind.Enum,
             ["StandardCAN", "ExtendedCAN", "reserved", "J1939PG", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "StandardCAN_FD", "ExtendedCAN_FD"]);
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 }

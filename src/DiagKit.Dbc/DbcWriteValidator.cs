@@ -6,15 +6,19 @@ namespace DiagKit.Dbc;
 internal static partial class DbcWriteValidator
 {
     private const string EmptyReceiverSentinel = "Vector__XXX";
+    private const string SystemNodeLongSymbol = "SystemNodeLongSymbol";
+    private const string SystemMessageLongSymbol = "SystemMessageLongSymbol";
+    private const string SystemSignalLongSymbol = "SystemSignalLongSymbol";
+    private const string SystemEnvVarLongSymbol = "SystemEnvVarLongSymbol";
     private const int MaxSignalBitLength = 64;
     private const DbcFrameFlags UnsupportedFrameFlags =
         DbcFrameFlags.BitRateSwitch | DbcFrameFlags.ErrorStateIndicator;
     private static readonly HashSet<string> LongSymbolAttributeNames = new(StringComparer.Ordinal)
     {
-        "SystemNodeLongSymbol",
-        "SystemMessageLongSymbol",
-        "SystemSignalLongSymbol",
-        "SystemEnvVarLongSymbol",
+        SystemNodeLongSymbol,
+        SystemMessageLongSymbol,
+        SystemSignalLongSymbol,
+        SystemEnvVarLongSymbol,
     };
 
     public static DbcValidationResult Validate(DbcDocument document, DbcWriterOptions? options = null)
@@ -29,6 +33,24 @@ internal static partial class DbcWriteValidator
         ValidateObjectName("message", document.Messages.Select(x => DbcWriterNameFormatter.GetMessageExportName(x, options)), diagnostics);
         ValidateObjectName("environment variable", document.EnvironmentVariables.Values.Select(x => DbcWriterNameFormatter.GetEnvironmentVariableExportName(x, options)), diagnostics);
         ValidateReferencedNodeMetadataCollisions(document, options, diagnostics);
+        ValidateLongSymbolLookupCollisions(
+            "node",
+            EnumerateReferencedNodes(document),
+            node => node.Name,
+            node => DbcWriterNameFormatter.GetNodeExportName(node, options),
+            diagnostics);
+        ValidateLongSymbolLookupCollisions(
+            "message",
+            document.Messages,
+            message => message.Name,
+            message => DbcWriterNameFormatter.GetMessageExportName(message, options),
+            diagnostics);
+        ValidateLongSymbolLookupCollisions(
+            "environment variable",
+            document.EnvironmentVariables.Values,
+            variable => variable.Name,
+            variable => DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options),
+            diagnostics);
         foreach (var node in document.Nodes)
         {
             ValidateLongSymbolExport("Node", node.Name, DbcWriterNameFormatter.GetNodeExportName(node, options), diagnostics);
@@ -75,6 +97,12 @@ internal static partial class DbcWriteValidator
             }
 
             ValidateObjectName($"signal in message '{message.Name}'", message.Signals.Select(x => DbcWriterNameFormatter.GetSignalExportName(x, options)), diagnostics);
+            ValidateLongSymbolLookupCollisions(
+                $"signal in message '{message.Name}'",
+                message.Signals,
+                signal => signal.Name,
+                signal => DbcWriterNameFormatter.GetSignalExportName(signal, options),
+                diagnostics);
             foreach (var signal in message.Signals)
             {
                 ValidateLongSymbolExport("Signal", signal.Name, DbcWriterNameFormatter.GetSignalExportName(signal, options), diagnostics);
@@ -180,6 +208,61 @@ internal static partial class DbcWriteValidator
         }
     }
 
+    private static void ValidateLongSymbolLookupCollisions<T>(
+        string scope,
+        IEnumerable<T> items,
+        Func<T, string> getCanonicalName,
+        Func<T, string> getExportName,
+        List<DbcDiagnostic> diagnostics)
+        where T : class
+    {
+        var names = new Dictionary<string, (T Item, bool HasAlias, bool IsAliasName)>(StringComparer.Ordinal);
+        foreach (var item in items)
+        {
+            var canonicalName = getCanonicalName(item);
+            var exportName = getExportName(item);
+            var hasAlias = !string.Equals(canonicalName, exportName, StringComparison.Ordinal);
+            AddLongSymbolLookupName(scope, names, canonicalName, item, hasAlias, isAliasName: false, diagnostics);
+            AddLongSymbolLookupName(scope, names, exportName, item, hasAlias, isAliasName: hasAlias, diagnostics);
+        }
+    }
+
+    private static void AddLongSymbolLookupName<T>(
+        string scope,
+        Dictionary<string, (T Item, bool HasAlias, bool IsAliasName)> names,
+        string name,
+        T item,
+        bool itemHasAlias,
+        bool isAliasName,
+        List<DbcDiagnostic> diagnostics)
+        where T : class
+    {
+        if (!names.TryGetValue(name, out var existing))
+        {
+            names[name] = (item, itemHasAlias, isAliasName);
+            return;
+        }
+
+        if (!ReferenceEquals(existing.Item, item))
+        {
+            if ((isAliasName && existing.IsAliasName) ||
+                (!isAliasName && !itemHasAlias && !existing.HasAlias))
+            {
+                return;
+            }
+
+            diagnostics.Add(Error(
+                "DBC_WRITE_NAME_COLLISION",
+                $"{scope} long-symbol lookup name '{name}' would resolve to multiple objects after reload."));
+            return;
+        }
+
+        if (itemHasAlias && !existing.HasAlias)
+        {
+            names[name] = (item, true, existing.IsAliasName || isAliasName);
+        }
+    }
+
     private static void ValidateTransmitters(
         DbcMessage message,
         DbcWriterOptions options,
@@ -221,7 +304,7 @@ internal static partial class DbcWriteValidator
         ValidateOptionalQuotedText("Document", "network", "comment", document.Comment, diagnostics);
         foreach (var definition in document.AttributeDefinitions.Values)
         {
-            ValidateLongSymbolAttributeName("Attribute definition", definition.Name, diagnostics);
+            var isLongSymbolDefinition = ValidateLongSymbolDefinition(definition, diagnostics);
             ValidateAttributeDefinition(
                 "Attribute definition",
                 definition.Name,
@@ -232,7 +315,16 @@ internal static partial class DbcWriteValidator
                 diagnostics);
             if (definition.DefaultValue is not null)
             {
-                ValidateAttributeValue("Attribute default", "network", definition.DefaultValue, definition, diagnostics);
+                if (isLongSymbolDefinition)
+                {
+                    diagnostics.Add(Error(
+                        "DBC_WRITE_LONG_SYMBOL_CONFLICT",
+                        $"Attribute definition '{definition.Name}' has a default value, but Vector long-symbol attributes must be assigned to explicit objects."));
+                }
+                else
+                {
+                    ValidateAttributeValue("Attribute default", "network", definition.DefaultValue, definition, diagnostics);
+                }
             }
         }
 
@@ -564,9 +656,7 @@ internal static partial class DbcWriteValidator
             return;
         }
 
-        diagnostics.Add(Error(
-            "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL",
-            $"{objectKind} '{canonicalName}' would be exported as '{exportName}', but Task 4 normalized export does not emit Vector long-symbol attributes yet."));
+        ValidateQuotedText(objectKind, canonicalName, "Vector long-symbol name", canonicalName, diagnostics);
     }
 
     private static void ValidateAttributeValues(
@@ -579,8 +669,9 @@ internal static partial class DbcWriteValidator
         foreach (var attribute in attributes.Values)
         {
             ValidateQuotedText($"{objectKind} '{objectName}' attribute", attribute.Name, "name", attribute.Name, diagnostics);
-            if (ValidateLongSymbolAttributeName($"{objectKind} '{objectName}' attribute", attribute.Name, diagnostics))
+            if (IsLongSymbolAttributeName(attribute.Name))
             {
+                ValidateLongSymbolAttributeValue(objectKind, objectName, attribute, diagnostics);
                 continue;
             }
 
@@ -825,17 +916,77 @@ internal static partial class DbcWriteValidator
         }
     }
 
-    private static bool ValidateLongSymbolAttributeName(string ownerDescription, string attributeName, List<DbcDiagnostic> diagnostics)
+    private static bool ValidateLongSymbolDefinition(DbcAttributeDefinition definition, List<DbcDiagnostic> diagnostics)
     {
-        if (!LongSymbolAttributeNames.Contains(attributeName))
+        if (!IsLongSymbolAttributeName(definition.Name))
         {
             return false;
         }
 
-        diagnostics.Add(Error(
-            "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL",
-            $"{ownerDescription} '{attributeName}' is reserved for Vector long-symbol export, which remains out of scope for Task 4."));
+        if (definition.OwnerKind != GetExpectedLongSymbolOwnerKind(definition.Name) ||
+            definition.ValueKind != DbcAttributeValueKind.String)
+        {
+            diagnostics.Add(Error(
+                "DBC_WRITE_LONG_SYMBOL_CONFLICT",
+                $"Attribute definition '{definition.Name}' must use the matching Vector long-symbol owner kind and STRING value kind."));
+        }
+
         return true;
+    }
+
+    private static void ValidateLongSymbolAttributeValue(
+        string objectKind,
+        string objectName,
+        DbcAttributeValue attribute,
+        List<DbcDiagnostic> diagnostics)
+    {
+        var expectedAttributeName = GetExpectedLongSymbolAttributeName(objectKind);
+        var separatorIndex = objectName.LastIndexOf('.');
+        var expectedValue = string.Equals(objectKind, "Signal", StringComparison.Ordinal) && separatorIndex >= 0
+            ? objectName[(separatorIndex + 1)..]
+            : objectName;
+        if (!string.Equals(attribute.Name, expectedAttributeName, StringComparison.Ordinal) ||
+            attribute.ValueKind != DbcAttributeValueKind.String ||
+            !string.Equals(attribute.RawValue, expectedValue, StringComparison.Ordinal) ||
+            attribute.Value is not string stringValue ||
+            !string.Equals(stringValue, expectedValue, StringComparison.Ordinal))
+        {
+            diagnostics.Add(Error(
+                "DBC_WRITE_LONG_SYMBOL_CONFLICT",
+                $"{objectKind} '{objectName}' attribute '{attribute.Name}' conflicts with its canonical name."));
+            return;
+        }
+
+        ValidateQuotedText(objectKind, objectName, "Vector long-symbol name", expectedValue, diagnostics);
+    }
+
+    private static string? GetExpectedLongSymbolAttributeName(string objectKind)
+    {
+        return objectKind switch
+        {
+            "Node" => SystemNodeLongSymbol,
+            "Message" => SystemMessageLongSymbol,
+            "Signal" => SystemSignalLongSymbol,
+            "Environment variable" => SystemEnvVarLongSymbol,
+            _ => null,
+        };
+    }
+
+    private static DbcAttributeOwnerKind GetExpectedLongSymbolOwnerKind(string attributeName)
+    {
+        return attributeName switch
+        {
+            SystemNodeLongSymbol => DbcAttributeOwnerKind.Node,
+            SystemMessageLongSymbol => DbcAttributeOwnerKind.Message,
+            SystemSignalLongSymbol => DbcAttributeOwnerKind.Signal,
+            SystemEnvVarLongSymbol => DbcAttributeOwnerKind.EnvironmentVariable,
+            _ => DbcAttributeOwnerKind.Network,
+        };
+    }
+
+    private static bool IsLongSymbolAttributeName(string attributeName)
+    {
+        return LongSymbolAttributeNames.Contains(attributeName);
     }
 
     private static void ValidateOptionalQuotedText(

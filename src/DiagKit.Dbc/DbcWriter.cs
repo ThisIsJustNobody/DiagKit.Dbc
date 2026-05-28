@@ -9,6 +9,11 @@ namespace DiagKit.Dbc;
 /// </summary>
 public static class DbcWriter
 {
+    private const string SystemNodeLongSymbol = "SystemNodeLongSymbol";
+    private const string SystemMessageLongSymbol = "SystemMessageLongSymbol";
+    private const string SystemSignalLongSymbol = "SystemSignalLongSymbol";
+    private const string SystemEnvVarLongSymbol = "SystemEnvVarLongSymbol";
+
     /// <summary>
     /// 将 DBC 文档写出为规范化文本。<br/>
     /// Writes a DBC document as normalized text.
@@ -201,8 +206,10 @@ public static class DbcWriter
     {
         AppendComments(builder, document, options, newline);
         AppendAttributeDefinitions(builder, document, newline);
+        AppendLongSymbolAttributeDefinitions(builder, document, options, newline);
         AppendAttributeDefaults(builder, document, newline);
         AppendAttributeValues(builder, document, options, newline);
+        AppendLongSymbolAttributeValues(builder, document, options, newline);
         AppendRelationAttributes(builder, document, newline);
         AppendValueDescriptions(builder, document, options, newline);
         AppendSignalValueTypes(builder, document, options, newline);
@@ -275,6 +282,11 @@ public static class DbcWriter
     {
         foreach (var definition in document.AttributeDefinitions.Values.OrderBy(definition => definition.Name, StringComparer.Ordinal))
         {
+            if (IsLongSymbolAttributeName(definition.Name))
+            {
+                continue;
+            }
+
             builder.Append("BA_DEF_ ");
             var ownerToken = GetOwnerToken(definition.OwnerKind);
             if (ownerToken.Length > 0)
@@ -294,6 +306,11 @@ public static class DbcWriter
     {
         foreach (var definition in document.AttributeDefinitions.Values.OrderBy(definition => definition.Name, StringComparer.Ordinal))
         {
+            if (IsLongSymbolAttributeName(definition.Name))
+            {
+                continue;
+            }
+
             if (definition.DefaultValue is null)
             {
                 continue;
@@ -312,6 +329,11 @@ public static class DbcWriter
     {
         foreach (var value in document.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
         {
+            if (IsLongSymbolAttributeName(value.Name))
+            {
+                continue;
+            }
+
             builder.Append("BA_ \"")
                 .Append(EscapeQuotedText(value.Name))
                 .Append("\" ")
@@ -324,6 +346,11 @@ public static class DbcWriter
         {
             foreach (var value in node.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
             {
+                if (IsLongSymbolAttributeName(value.Name))
+                {
+                    continue;
+                }
+
                 builder.Append("BA_ \"")
                     .Append(EscapeQuotedText(value.Name))
                     .Append("\" BU_ ")
@@ -339,6 +366,11 @@ public static class DbcWriter
         {
             foreach (var value in message.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
             {
+                if (IsLongSymbolAttributeName(value.Name))
+                {
+                    continue;
+                }
+
                 builder.Append("BA_ \"")
                     .Append(EscapeQuotedText(value.Name))
                     .Append("\" BO_ ")
@@ -353,6 +385,11 @@ public static class DbcWriter
             {
                 foreach (var value in signal.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
                 {
+                    if (IsLongSymbolAttributeName(value.Name))
+                    {
+                        continue;
+                    }
+
                     builder.Append("BA_ \"")
                         .Append(EscapeQuotedText(value.Name))
                         .Append("\" SG_ ")
@@ -371,6 +408,11 @@ public static class DbcWriter
         {
             foreach (var value in variable.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
             {
+                if (IsLongSymbolAttributeName(value.Name))
+                {
+                    continue;
+                }
+
                 builder.Append("BA_ \"")
                     .Append(EscapeQuotedText(value.Name))
                     .Append("\" EV_ ")
@@ -381,6 +423,177 @@ public static class DbcWriter
                     .Append(newline);
             }
         }
+    }
+
+    private static void AppendLongSymbolAttributeDefinitions(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        AppendLongSymbolAttributeDefinitionIfNeeded(
+            builder,
+            document,
+            newline,
+            SystemNodeLongSymbol,
+            DbcAttributeOwnerKind.Node,
+            GetLongSymbolNodes(document, options).Any(NeedsNodeLongSymbolValue));
+        AppendLongSymbolAttributeDefinitionIfNeeded(
+            builder,
+            document,
+            newline,
+            SystemMessageLongSymbol,
+            DbcAttributeOwnerKind.Message,
+            EnumerateMessages(document, options).Any(NeedsMessageLongSymbolValue));
+        AppendLongSymbolAttributeDefinitionIfNeeded(
+            builder,
+            document,
+            newline,
+            SystemSignalLongSymbol,
+            DbcAttributeOwnerKind.Signal,
+            EnumerateMessages(document, options).Any(message => EnumerateSignals(message, options).Any(NeedsSignalLongSymbolValue)));
+        AppendLongSymbolAttributeDefinitionIfNeeded(
+            builder,
+            document,
+            newline,
+            SystemEnvVarLongSymbol,
+            DbcAttributeOwnerKind.EnvironmentVariable,
+            EnumerateEnvironmentVariables(document, options).Any(NeedsEnvironmentVariableLongSymbolValue));
+    }
+
+    private static void AppendLongSymbolAttributeDefinitionIfNeeded(
+        StringBuilder builder,
+        DbcDocument document,
+        string newline,
+        string name,
+        DbcAttributeOwnerKind ownerKind,
+        bool generatedValueNeeded)
+    {
+        if (!generatedValueNeeded && !document.AttributeDefinitions.ContainsKey(name))
+        {
+            return;
+        }
+
+        builder.Append("BA_DEF_ ");
+        var ownerToken = GetOwnerToken(ownerKind);
+        if (ownerToken.Length > 0)
+        {
+            builder.Append(ownerToken).Append(' ');
+        }
+
+        builder.Append('"')
+            .Append(EscapeQuotedText(name))
+            .Append("\" STRING;")
+            .Append(newline);
+    }
+
+    private static void AppendLongSymbolAttributeValues(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
+    {
+        foreach (var node in GetLongSymbolNodes(document, options))
+        {
+            if (!NeedsNodeLongSymbolValue(node))
+            {
+                continue;
+            }
+
+            builder.Append("BA_ \"")
+                .Append(SystemNodeLongSymbol)
+                .Append("\" BU_ ")
+                .Append(DbcWriterNameFormatter.GetNodeExportName(node, options))
+                .Append(" \"")
+                .Append(EscapeQuotedText(node.Name))
+                .Append("\";")
+                .Append(newline);
+        }
+
+        foreach (var message in EnumerateMessages(document, options))
+        {
+            if (NeedsMessageLongSymbolValue(message))
+            {
+                builder.Append("BA_ \"")
+                    .Append(SystemMessageLongSymbol)
+                    .Append("\" BO_ ")
+                    .Append(message.RawId.Value)
+                    .Append(" \"")
+                    .Append(EscapeQuotedText(message.Name))
+                    .Append("\";")
+                    .Append(newline);
+            }
+
+            foreach (var signal in EnumerateSignals(message, options))
+            {
+                if (!NeedsSignalLongSymbolValue(signal))
+                {
+                    continue;
+                }
+
+                builder.Append("BA_ \"")
+                    .Append(SystemSignalLongSymbol)
+                    .Append("\" SG_ ")
+                    .Append(message.RawId.Value)
+                    .Append(' ')
+                    .Append(DbcWriterNameFormatter.GetSignalExportName(signal, options))
+                    .Append(" \"")
+                    .Append(EscapeQuotedText(signal.Name))
+                    .Append("\";")
+                    .Append(newline);
+            }
+        }
+
+        foreach (var variable in EnumerateEnvironmentVariables(document, options))
+        {
+            if (!NeedsEnvironmentVariableLongSymbolValue(variable))
+            {
+                continue;
+            }
+
+            builder.Append("BA_ \"")
+                .Append(SystemEnvVarLongSymbol)
+                .Append("\" EV_ ")
+                .Append(DbcWriterNameFormatter.GetEnvironmentVariableExportName(variable, options))
+                .Append(" \"")
+                .Append(EscapeQuotedText(variable.Name))
+                .Append("\";")
+                .Append(newline);
+        }
+    }
+
+    private static IEnumerable<DbcNode> GetLongSymbolNodes(DbcDocument document, DbcWriterOptions options)
+    {
+        var nodesByExportName = new Dictionary<string, DbcNode>(StringComparer.Ordinal);
+        foreach (var node in EnumerateReferencedNodes(document))
+        {
+            var exportName = DbcWriterNameFormatter.GetNodeExportName(node, options);
+            if (!nodesByExportName.TryGetValue(exportName, out var existingNode) ||
+                !NeedsNodeLongSymbolValue(existingNode) && NeedsNodeLongSymbolValue(node))
+            {
+                nodesByExportName[exportName] = node;
+            }
+        }
+
+        return options.SortMode == DbcWriterSortMode.Stable
+            ? nodesByExportName.OrderBy(item => item.Key, StringComparer.Ordinal).Select(item => item.Value)
+            : nodesByExportName.Values;
+    }
+
+    private static bool NeedsNodeLongSymbolValue(DbcNode node)
+    {
+        return !string.Equals(node.Name, node.SourceName, StringComparison.Ordinal) ||
+            node.Attributes.ContainsKey(SystemNodeLongSymbol);
+    }
+
+    private static bool NeedsMessageLongSymbolValue(DbcMessage message)
+    {
+        return !string.Equals(message.Name, message.SourceName, StringComparison.Ordinal) ||
+            message.Attributes.ContainsKey(SystemMessageLongSymbol);
+    }
+
+    private static bool NeedsSignalLongSymbolValue(DbcSignal signal)
+    {
+        return !string.Equals(signal.Name, signal.SourceName, StringComparison.Ordinal) ||
+            signal.Attributes.ContainsKey(SystemSignalLongSymbol);
+    }
+
+    private static bool NeedsEnvironmentVariableLongSymbolValue(DbcEnvironmentVariable variable)
+    {
+        return !string.Equals(variable.Name, variable.SourceName, StringComparison.Ordinal) ||
+            variable.Attributes.ContainsKey(SystemEnvVarLongSymbol);
     }
 
     private static IEnumerable<DbcNode> GetAttributeNodes(DbcDocument document, DbcWriterOptions options)
@@ -724,6 +937,14 @@ public static class DbcWriter
         return IsNumericAttributeRawValue(rawValue) || DbcWriteValidator.IsValidIdentifier(rawValue)
             ? rawValue
             : "\"" + EscapeQuotedText(rawValue) + "\"";
+    }
+
+    private static bool IsLongSymbolAttributeName(string name)
+    {
+        return string.Equals(name, SystemNodeLongSymbol, StringComparison.Ordinal) ||
+            string.Equals(name, SystemMessageLongSymbol, StringComparison.Ordinal) ||
+            string.Equals(name, SystemSignalLongSymbol, StringComparison.Ordinal) ||
+            string.Equals(name, SystemEnvVarLongSymbol, StringComparison.Ordinal);
     }
 
     private static bool IsNumericAttributeRawValue(string rawValue)
