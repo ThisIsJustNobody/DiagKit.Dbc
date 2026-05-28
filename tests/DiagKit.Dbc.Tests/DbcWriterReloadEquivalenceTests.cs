@@ -84,6 +84,33 @@ public sealed class DbcWriterReloadEquivalenceTests
     }
 
     [TestMethod]
+    public void WriteText_LoadText_PreservesMotorolaSignalBitRange()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(640),
+                    "MotorolaStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("MotoSigned12", 55, 12, DbcByteOrder.Motorola, DbcSignalValueType.Signed, 0.25, -5, -517, 506.75, "", [tool])]),
+            ]);
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(DbcWriter.WriteTextOrThrow(original));
+
+        var signal = reloaded.ResolveMessage("MotorolaStatus").ResolveSignal("MotoSigned12");
+        Assert.AreEqual(55, signal.StartBit);
+        Assert.AreEqual(12, signal.BitLength);
+        Assert.AreEqual(DbcByteOrder.Motorola, signal.ByteOrder);
+        Assert.AreEqual(DbcSignalValueType.Signed, signal.ValueType);
+        Assert.AreEqual(0.25, signal.Factor);
+        Assert.AreEqual(-5, signal.Offset);
+    }
+
+    [TestMethod]
     public void WriteText_LoadText_PreservesEmptySignalReceivers()
     {
         var ecu = new DbcNode("ECU");

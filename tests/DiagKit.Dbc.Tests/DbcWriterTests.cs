@@ -303,15 +303,16 @@ public sealed class DbcWriterTests
     [TestMethod]
     public void WriteText_InvalidSignalBitRanges_ReturnsInvalidSignalBitRangeError()
     {
-        (string SignalName, int DataLength, int StartBit, int BitLength)[] cases =
+        (string SignalName, int DataLength, int StartBit, int BitLength, DbcByteOrder ByteOrder)[] cases =
         {
-            ("NegativeStart", 8, -1, 8),
-            ("ZeroLength", 8, 0, 0),
-            ("ExceedsMessagePayload", 8, 64, 1),
-            ("SignalTooWide", 8, 0, 65),
+            ("NegativeStart", 8, -1, 8, DbcByteOrder.Intel),
+            ("ZeroLength", 8, 0, 0, DbcByteOrder.Intel),
+            ("ExceedsMessagePayload", 8, 64, 1, DbcByteOrder.Intel),
+            ("SignalTooWide", 8, 0, 65, DbcByteOrder.Intel),
+            ("MotorolaExceedsMessagePayload", 1, 3, 12, DbcByteOrder.Motorola),
         };
 
-        foreach (var (signalName, dataLength, startBit, bitLength) in cases)
+        foreach (var (signalName, dataLength, startBit, bitLength, byteOrder) in cases)
         {
             var ecu = new DbcNode("ECU");
             var document = new DbcDocument(
@@ -322,7 +323,7 @@ public sealed class DbcWriterTests
                         "VehicleStatus",
                         dataLength,
                         ecu,
-                        [new DbcSignal(signalName, startBit, bitLength, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "", [ecu])]),
+                        [new DbcSignal(signalName, startBit, bitLength, byteOrder, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "", [ecu])]),
                 ]);
 
             var result = DbcWriter.WriteText(document);

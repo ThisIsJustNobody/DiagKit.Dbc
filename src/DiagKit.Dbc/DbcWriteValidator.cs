@@ -105,12 +105,9 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateSignalBitRange(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
     {
-        var payloadBits = (long)message.DataLength * 8;
-        var bitEnd = (long)signal.StartBit + signal.BitLength;
         if (signal.StartBit >= 0 &&
-            signal.BitLength > 0 &&
-            signal.BitLength <= MaxSignalBitLength &&
-            bitEnd <= payloadBits)
+            signal.BitLength is >= 1 and <= MaxSignalBitLength &&
+            IsSignalRangeWithinPayload(message.DataLength, signal.StartBit, signal.BitLength, signal.ByteOrder))
         {
             return;
         }
@@ -118,6 +115,40 @@ internal static partial class DbcWriteValidator
         diagnostics.Add(Error(
             "DBC_WRITE_INVALID_SIGNAL_BIT_RANGE",
             $"Signal '{message.Name}.{signal.Name}' bit range {signal.StartBit}|{signal.BitLength} is outside message payload length {message.DataLength} or exceeds the current 64-bit signal limit."));
+    }
+
+    private static bool IsSignalRangeWithinPayload(int dataLength, int startBit, int bitLength, DbcByteOrder byteOrder)
+    {
+        return byteOrder switch
+        {
+            DbcByteOrder.Intel => (long)startBit + bitLength <= (long)dataLength * 8,
+            DbcByteOrder.Motorola => IsMotorolaRangeWithinPayload(dataLength, startBit, bitLength),
+            _ => false,
+        };
+    }
+
+    private static bool IsMotorolaRangeWithinPayload(int dataLength, int startBit, int bitLength)
+    {
+        var byteIndex = startBit / 8;
+        var bitInByte = startBit % 8;
+        for (var i = 0; i < bitLength; i++)
+        {
+            if ((uint)byteIndex >= (uint)dataLength)
+            {
+                return false;
+            }
+
+            bitInByte--;
+            if (bitInByte >= 0)
+            {
+                continue;
+            }
+
+            byteIndex++;
+            bitInByte = 7;
+        }
+
+        return true;
     }
 
     private static bool HasUnsupportedMultiplexing(DbcMultiplexing multiplexing)
