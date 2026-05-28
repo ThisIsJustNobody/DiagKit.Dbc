@@ -24,6 +24,13 @@ internal static partial class DbcWriteValidator
         {
             ValidateLongSymbolExport("Message", message.Name, DbcWriterNameFormatter.GetMessageExportName(message, options), diagnostics);
 
+            if (message.Transmitters.Count > 1)
+            {
+                diagnostics.Add(Error(
+                    "DBC_WRITE_UNSUPPORTED_ADDITIONAL_TRANSMITTERS",
+                    $"Message '{message.Name}' has additional transmitters, but Task 2 normalized export does not emit BO_TX_BU_ yet."));
+            }
+
             if (!message.SupportsSingleFrameRuntime)
             {
                 diagnostics.Add(new DbcDiagnostic(
@@ -153,9 +160,15 @@ internal static partial class DbcWriteValidator
 
     private static bool HasUnsupportedMultiplexing(DbcMultiplexing multiplexing)
     {
-        return multiplexing.SwitchRanges.Count > 0 ||
-            !string.IsNullOrEmpty(multiplexing.MultiplexorSignalName) ||
-            (multiplexing.Role == DbcMultiplexingRole.Multiplexed && multiplexing.SwitchValue is null);
+        var hasExtendedFields = multiplexing.SwitchRanges.Count > 0 ||
+            !string.IsNullOrEmpty(multiplexing.MultiplexorSignalName);
+
+        return multiplexing.Role switch
+        {
+            DbcMultiplexingRole.None or DbcMultiplexingRole.Multiplexor => multiplexing.SwitchValue is not null || hasExtendedFields,
+            DbcMultiplexingRole.Multiplexed => multiplexing.SwitchValue is not >= 0 || hasExtendedFields,
+            _ => true,
+        };
     }
 
     private static void ValidateFiniteSignalNumber(
