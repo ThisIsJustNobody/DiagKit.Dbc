@@ -303,14 +303,15 @@ public sealed class DbcWriterTests
     [TestMethod]
     public void WriteText_InvalidSignalBitRanges_ReturnsInvalidSignalBitRangeError()
     {
-        (string SignalName, int StartBit, int BitLength)[] cases =
+        (string SignalName, int DataLength, int StartBit, int BitLength)[] cases =
         {
-            ("NegativeStart", -1, 8),
-            ("ZeroLength", 0, 0),
-            ("BeyondCanFdFrame", 500, 13),
+            ("NegativeStart", 8, -1, 8),
+            ("ZeroLength", 8, 0, 0),
+            ("ExceedsMessagePayload", 8, 64, 1),
+            ("SignalTooWide", 8, 0, 65),
         };
 
-        foreach (var (signalName, startBit, bitLength) in cases)
+        foreach (var (signalName, dataLength, startBit, bitLength) in cases)
         {
             var ecu = new DbcNode("ECU");
             var document = new DbcDocument(
@@ -319,7 +320,7 @@ public sealed class DbcWriterTests
                     new DbcMessage(
                         new DbcRawMessageId(256),
                         "VehicleStatus",
-                        64,
+                        dataLength,
                         ecu,
                         [new DbcSignal(signalName, startBit, bitLength, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "", [ecu])]),
                 ]);
@@ -330,6 +331,31 @@ public sealed class DbcWriterTests
             Assert.IsNull(result.Text, signalName);
             Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_SIGNAL_BIT_RANGE"), signalName);
         }
+    }
+
+    [TestMethod]
+    public void WriteText_MetadataOnlyLargePayloadSignalWithinMessageRange_SucceedsWithRuntimeWarning()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(1280),
+                    "LargePayload",
+                    100,
+                    ecu,
+                    [new DbcSignal("DiagnosticBlock", 512, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [ecu])]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsTrue(result.Succeeded);
+        Assert.AreEqual(0, result.Errors.Count);
+        Assert.IsTrue(result.Warnings.Any(x => x.Code == "DBC_WRITE_RUNTIME_UNSUPPORTED_MESSAGE"));
+        var text = result.GetTextOrThrow();
+        StringAssert.Contains(text, "BO_ 1280 LargePayload: 100 ECU");
+        StringAssert.Contains(text, " SG_ DiagnosticBlock : 512|8@1+ (1,0) [0|255] \"\" ECU");
     }
 
     [TestMethod]

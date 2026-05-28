@@ -5,7 +5,7 @@ namespace DiagKit.Dbc;
 internal static partial class DbcWriteValidator
 {
     private const string EmptyReceiverSentinel = "Vector__XXX";
-    private const int MaxCanFdSignalBitEnd = 512;
+    private const int MaxSignalBitLength = 64;
 
     public static DbcValidationResult Validate(DbcDocument document, DbcWriterOptions? options = null)
     {
@@ -105,17 +105,19 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateSignalBitRange(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)
     {
+        var payloadBits = (long)message.DataLength * 8;
         var bitEnd = (long)signal.StartBit + signal.BitLength;
         if (signal.StartBit >= 0 &&
             signal.BitLength > 0 &&
-            bitEnd <= MaxCanFdSignalBitEnd)
+            signal.BitLength <= MaxSignalBitLength &&
+            bitEnd <= payloadBits)
         {
             return;
         }
 
         diagnostics.Add(Error(
             "DBC_WRITE_INVALID_SIGNAL_BIT_RANGE",
-            $"Signal '{message.Name}.{signal.Name}' bit range {signal.StartBit}|{signal.BitLength} cannot be exported as a single-frame DBC signal."));
+            $"Signal '{message.Name}.{signal.Name}' bit range {signal.StartBit}|{signal.BitLength} is outside message payload length {message.DataLength} or exceeds the current 64-bit signal limit."));
     }
 
     private static bool HasUnsupportedMultiplexing(DbcMultiplexing multiplexing)
