@@ -11,17 +11,10 @@ internal static partial class DbcWriteValidator
 
         var diagnostics = new List<DbcDiagnostic>();
         ValidateObjectName("node", document.Nodes.Select(x => DbcWriterNameFormatter.GetNodeExportName(x, options)), diagnostics);
-        ValidateObjectName("message", document.Messages.Select(x => x.Name), diagnostics);
+        ValidateObjectName("message", document.Messages.Select(x => DbcWriterNameFormatter.GetMessageExportName(x, options)), diagnostics);
 
         foreach (var message in document.Messages)
         {
-            if (!IsValidIdentifier(message.SourceName))
-            {
-                diagnostics.Add(Error(
-                    "DBC_WRITE_INVALID_IDENTIFIER",
-                    $"Message '{message.Name}' source name '{message.SourceName}' is not a valid DBC identifier."));
-            }
-
             if (!message.SupportsSingleFrameRuntime)
             {
                 diagnostics.Add(new DbcDiagnostic(
@@ -30,14 +23,22 @@ internal static partial class DbcWriteValidator
                     $"Message '{message.Name}' payload length {message.DataLength} can be exported as metadata but is not supported by the CAN/CAN FD single-frame runtime."));
             }
 
-            ValidateObjectName($"signal in message '{message.Name}'", message.Signals.Select(x => x.Name), diagnostics);
+            var transmitterName = DbcWriterNameFormatter.GetNodeExportName(message.PrimaryTransmitter, options);
+            if (!IsValidIdentifier(transmitterName))
+            {
+                diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Message '{message.Name}' transmitter name '{transmitterName}' is not a valid DBC identifier."));
+            }
+
+            ValidateObjectName($"signal in message '{message.Name}'", message.Signals.Select(x => DbcWriterNameFormatter.GetSignalExportName(x, options)), diagnostics);
             foreach (var signal in message.Signals)
             {
-                if (!IsValidIdentifier(signal.SourceName))
+                foreach (var receiver in signal.Receivers)
                 {
-                    diagnostics.Add(Error(
-                        "DBC_WRITE_INVALID_IDENTIFIER",
-                        $"Signal '{message.Name}.{signal.Name}' source name '{signal.SourceName}' is not a valid DBC identifier."));
+                    var receiverName = DbcWriterNameFormatter.GetNodeExportName(receiver, options);
+                    if (!IsValidIdentifier(receiverName))
+                    {
+                        diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Signal '{message.Name}.{signal.Name}' receiver name '{receiverName}' is not a valid DBC identifier."));
+                    }
                 }
             }
         }
