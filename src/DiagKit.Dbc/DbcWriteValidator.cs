@@ -8,6 +8,13 @@ internal static partial class DbcWriteValidator
     private const int MaxSignalBitLength = 64;
     private const DbcFrameFlags UnsupportedFrameFlags =
         DbcFrameFlags.BitRateSwitch | DbcFrameFlags.ErrorStateIndicator;
+    private static readonly HashSet<string> LongSymbolAttributeNames = new(StringComparer.Ordinal)
+    {
+        "SystemNodeLongSymbol",
+        "SystemMessageLongSymbol",
+        "SystemSignalLongSymbol",
+        "SystemEnvVarLongSymbol",
+    };
 
     public static DbcValidationResult Validate(DbcDocument document, DbcWriterOptions? options = null)
     {
@@ -209,6 +216,11 @@ internal static partial class DbcWriteValidator
 
     private static void ValidateDocumentMetadata(DbcDocument document, List<DbcDiagnostic> diagnostics)
     {
+        foreach (var definition in document.AttributeDefinitions.Values)
+        {
+            ValidateLongSymbolAttributeName("Attribute definition", definition.Name, diagnostics);
+        }
+
         ValidateAttributeValues("Document", "network", document.Attributes, document, diagnostics);
     }
 
@@ -326,6 +338,11 @@ internal static partial class DbcWriteValidator
     {
         foreach (var attribute in attributes.Values)
         {
+            if (ValidateLongSymbolAttributeName($"{objectKind} '{objectName}' attribute", attribute.Name, diagnostics))
+            {
+                continue;
+            }
+
             if (document.AttributeDefinitions.ContainsKey(attribute.Name))
             {
                 continue;
@@ -335,6 +352,19 @@ internal static partial class DbcWriteValidator
                 $"{objectKind} '{objectName}' attribute '{attribute.Name}' has no BA_DEF_ definition and would not reload equivalently.",
                 diagnostics);
         }
+    }
+
+    private static bool ValidateLongSymbolAttributeName(string ownerDescription, string attributeName, List<DbcDiagnostic> diagnostics)
+    {
+        if (!LongSymbolAttributeNames.Contains(attributeName))
+        {
+            return false;
+        }
+
+        diagnostics.Add(Error(
+            "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL",
+            $"{ownerDescription} '{attributeName}' is reserved for Vector long-symbol export, which remains out of scope for Task 4."));
+        return true;
     }
 
     private static bool AttributeDictionariesEqual(

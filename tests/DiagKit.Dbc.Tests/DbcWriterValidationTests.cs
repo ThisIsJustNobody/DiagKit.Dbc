@@ -4,6 +4,90 @@ namespace DiagKit.Dbc.Tests;
 public sealed class DbcWriterValidationTests
 {
     [TestMethod]
+    public void WriteText_VectorLongSymbolAttributeDefinitions_ReturnUnsupportedLongSymbolError()
+    {
+        var definitions = new Dictionary<string, DbcAttributeDefinition>
+        {
+            ["SystemNodeLongSymbol"] = new("SystemNodeLongSymbol", DbcAttributeOwnerKind.Node, DbcAttributeValueKind.String),
+            ["SystemMessageLongSymbol"] = new("SystemMessageLongSymbol", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.String),
+            ["SystemSignalLongSymbol"] = new("SystemSignalLongSymbol", DbcAttributeOwnerKind.Signal, DbcAttributeValueKind.String),
+            ["SystemEnvVarLongSymbol"] = new("SystemEnvVarLongSymbol", DbcAttributeOwnerKind.EnvironmentVariable, DbcAttributeValueKind.String),
+        };
+        var document = new DbcDocument([], [], definitions);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL"));
+    }
+
+    [TestMethod]
+    public void WriteText_VectorLongSymbolAttributeValues_ReturnUnsupportedLongSymbolError()
+    {
+        var ecu = new DbcNode(
+            "ECU",
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["SystemNodeLongSymbol"] = new("SystemNodeLongSymbol", DbcAttributeValueKind.String, "EngineControlUnit", "EngineControlUnit"),
+            });
+        var signal = new DbcSignal(
+            "Mode",
+            0,
+            8,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            255,
+            "",
+            [ecu],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["SystemSignalLongSymbol"] = new("SystemSignalLongSymbol", DbcAttributeValueKind.String, "OperatingMode", "OperatingMode"),
+            });
+        var message = new DbcMessage(
+            new DbcRawMessageId(256),
+            "Status",
+            8,
+            ecu,
+            [signal],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["SystemMessageLongSymbol"] = new("SystemMessageLongSymbol", DbcAttributeValueKind.String, "StatusMessage", "StatusMessage"),
+            });
+        var environmentVariable = new DbcEnvironmentVariable(
+            "Ignition",
+            0,
+            0,
+            1,
+            "",
+            0,
+            1,
+            "DUMMY_NODE_VECTOR0",
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["SystemEnvVarLongSymbol"] = new("SystemEnvVarLongSymbol", DbcAttributeValueKind.String, "IgnitionState", "IgnitionState"),
+            });
+        var document = new DbcDocument(
+            [ecu],
+            [message],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["SystemNodeLongSymbol"] = new("SystemNodeLongSymbol", DbcAttributeValueKind.String, "NetworkLevel", "NetworkLevel"),
+            },
+            environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
+            {
+                [environmentVariable.Name] = environmentVariable,
+            });
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL"));
+    }
+
+    [TestMethod]
     public void WriteText_PayloadLengthGreaterThan64_ReturnsRuntimeUnsupportedWarningAndText()
     {
         var ecu = new DbcNode("ECU");
