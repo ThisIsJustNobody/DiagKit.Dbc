@@ -52,9 +52,10 @@ public sealed class DbcDocumentBuilderTests
         var builder = DbcDocumentBuilder.FromDocument(original);
         builder.GetMessage("Status").WithComment("edited");
 
-        var document = builder.Build();
+        var text = DbcWriter.WriteTextOrThrow(builder.Build());
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
 
-        var message = document.ResolveMessage("Status");
+        var message = reloaded.ResolveMessage("Status");
         Assert.AreEqual("edited", message.Comment);
         var signal = message.ResolveSignal("Speed");
         Assert.AreEqual(0, signal.StartBit);
