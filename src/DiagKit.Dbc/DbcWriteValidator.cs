@@ -15,9 +15,15 @@ internal static partial class DbcWriteValidator
         var diagnostics = new List<DbcDiagnostic>();
         ValidateObjectName("node", document.Nodes.Select(x => DbcWriterNameFormatter.GetNodeExportName(x, options)), diagnostics);
         ValidateObjectName("message", document.Messages.Select(x => DbcWriterNameFormatter.GetMessageExportName(x, options)), diagnostics);
+        foreach (var node in document.Nodes)
+        {
+            ValidateLongSymbolExport("Node", node.Name, DbcWriterNameFormatter.GetNodeExportName(node, options), diagnostics);
+        }
 
         foreach (var message in document.Messages)
         {
+            ValidateLongSymbolExport("Message", message.Name, DbcWriterNameFormatter.GetMessageExportName(message, options), diagnostics);
+
             if (!message.SupportsSingleFrameRuntime)
             {
                 diagnostics.Add(new DbcDiagnostic(
@@ -27,6 +33,7 @@ internal static partial class DbcWriteValidator
             }
 
             var transmitterName = DbcWriterNameFormatter.GetNodeExportName(message.PrimaryTransmitter, options);
+            ValidateLongSymbolExport("Node", message.PrimaryTransmitter.Name, transmitterName, diagnostics);
             if (!IsValidIdentifier(transmitterName))
             {
                 diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Message '{message.Name}' transmitter name '{transmitterName}' is not a valid DBC identifier."));
@@ -35,11 +42,13 @@ internal static partial class DbcWriteValidator
             ValidateObjectName($"signal in message '{message.Name}'", message.Signals.Select(x => DbcWriterNameFormatter.GetSignalExportName(x, options)), diagnostics);
             foreach (var signal in message.Signals)
             {
+                ValidateLongSymbolExport("Signal", signal.Name, DbcWriterNameFormatter.GetSignalExportName(signal, options), diagnostics);
                 ValidateSignal(message, signal, diagnostics);
 
                 foreach (var receiver in signal.Receivers)
                 {
                     var receiverName = DbcWriterNameFormatter.GetNodeExportName(receiver, options);
+                    ValidateLongSymbolExport("Node", receiver.Name, receiverName, diagnostics);
                     if (!IsValidIdentifier(receiverName))
                     {
                         diagnostics.Add(Error("DBC_WRITE_INVALID_IDENTIFIER", $"Signal '{message.Name}.{signal.Name}' receiver name '{receiverName}' is not a valid DBC identifier."));
@@ -80,6 +89,18 @@ internal static partial class DbcWriteValidator
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Offset), signal.Offset, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Minimum), signal.Minimum, diagnostics);
         ValidateFiniteSignalNumber(message, signal, nameof(signal.Maximum), signal.Maximum, diagnostics);
+    }
+
+    private static void ValidateLongSymbolExport(string objectKind, string canonicalName, string exportName, List<DbcDiagnostic> diagnostics)
+    {
+        if (string.Equals(exportName, canonicalName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        diagnostics.Add(Error(
+            "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL",
+            $"{objectKind} '{canonicalName}' would be exported as '{exportName}', but Task 2 normalized export does not emit Vector long-symbol attributes yet."));
     }
 
     private static void ValidateSignalBitRange(DbcMessage message, DbcSignal signal, List<DbcDiagnostic> diagnostics)

@@ -223,6 +223,60 @@ public sealed class DbcWriterTests
     }
 
     [TestMethod]
+    public void WriteText_DefaultPolicyWithLongSymbolExport_ReturnsUnsupportedLongSymbolError()
+    {
+        var nodeLongSymbol = new DbcNode("CanonicalEcu", sourceName: "ECU");
+        var nodeCase = new DbcDocument([nodeLongSymbol], []);
+
+        var messageEcu = new DbcNode("ECU");
+        var messageCase = new DbcDocument(
+            [messageEcu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "CanonicalStatus",
+                    8,
+                    messageEcu,
+                    [],
+                    sourceName: "Status"),
+            ]);
+
+        var signalEcu = new DbcNode("ECU");
+        var signalCase = new DbcDocument(
+            [signalEcu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    signalEcu,
+                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [signalEcu], sourceName: "Speed")]),
+            ]);
+
+        var referencedReceiver = new DbcNode("CanonicalTool", sourceName: "Tool");
+        var referencedNodeCase = new DbcDocument(
+            [signalEcu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(512),
+                    "ReceiverStatus",
+                    8,
+                    signalEcu,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [referencedReceiver])]),
+            ]);
+
+        foreach (var document in new[] { nodeCase, messageCase, signalCase, referencedNodeCase })
+        {
+            var result = DbcWriter.WriteText(document);
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.IsNull(result.Text);
+            var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_LONG_SYMBOL");
+            Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+        }
+    }
+
+    [TestMethod]
     public void WriteText_MalformedMultiplexedSignal_ReturnsUnsupportedMultiplexingError()
     {
         var ecu = new DbcNode("ECU");
@@ -304,6 +358,12 @@ public sealed class DbcWriterTests
         StringAssert.Contains(text, "BU_: CanonicalEcu CanonicalTool");
         StringAssert.Contains(text, "BO_ 256 CanonicalStatus: 8 CanonicalEcu");
         StringAssert.Contains(text, " SG_ CanonicalSpeed : 0|16@1+ (1,0) [0|250] \"km/h\" CanonicalTool");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("CanonicalEcu", out _));
+        var message = reloaded.ResolveMessage("CanonicalStatus");
+        Assert.AreEqual("CanonicalStatus", message.Name);
+        Assert.AreEqual("CanonicalSpeed", message.ResolveSignal("CanonicalSpeed").Name);
     }
 
     [TestMethod]
