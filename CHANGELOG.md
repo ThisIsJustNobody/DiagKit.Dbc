@@ -1,11 +1,26 @@
 # 变更日志
 
-本文件记录项目的重要变更。包版本由 Git tag 通过 MinVer 自动生成；当前预览版本为 `1.1.0-preview.2`。
+本文件记录项目的重要变更。包版本由 Git tag 通过 MinVer 自动生成；当前计划预览版本为 `1.2.0-preview`。
 
 ## Unreleased
 
+- 暂无。
+
+## 1.2.0-preview - 2026-05-29
+
+### DBC 生成与导出
+
 - Added normalized DBC export through `DbcWriter`, including diagnostics and reload-equivalence coverage.
 - Added semantic `DbcDocumentBuilder` for creating or editing documents before export.
+- Added Vector long-symbol export for source short names and canonical long names.
+- Added relation namespace header output for `BU_SG_REL_`、`BU_EV_REL_`、`BU_BO_REL_`。
+- Fixed relation attribute default/value formatting so `STRING` and non-numeric `ENUM` raw values are quoted according to their `BA_DEF_REL_` value kind.
+
+### CANdb++ 兼容边界
+
+- Added `DbcWriterCompatibilityProfile.CanDbPlusKnownGood` for CANdb++-oriented exports. Strict mode fails on known-unsupported statements; Lenient mode omits them and returns `DBC_WRITE_UNSUPPORTED_CANDB_PLUS_METADATA` warnings.
+- Documented that the default `ReloadEquivalent` profile targets this library's reload semantic equivalence, not full CANdb++ GUI compatibility.
+- Marked ordinary `BA_ ... EV_ ...` environment-variable attribute assignments and `BA_REL_` relation assignments as excluded from the current CANdb++ known-good export set. `EV_`、`BO_TX_BU_`、`BA_DEF_REL_` 和 `BA_DEF_DEF_REL_` remain in the known-good set based on local/user validation.
 - Documented that first-stage export is normalized and does not preserve original file formatting.
 
 ## 1.1.0-preview.2 - 2026-05-22

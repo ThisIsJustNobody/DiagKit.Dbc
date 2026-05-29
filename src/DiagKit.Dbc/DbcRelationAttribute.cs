@@ -105,8 +105,8 @@ public sealed class DbcRelationAttributeDefault
 }
 
 /// <summary>
-/// DBC 关系属性赋值 (BA_REL_) 的原始元数据保留。<br/>
-/// Preserved raw metadata for DBC relation attribute assignments (BA_REL_).
+/// DBC 关系属性赋值 (BA_REL_) 的原始元数据保留；当前不把该语句列入 CANdb++ known-good 导出。<br/>
+/// Preserved raw metadata for DBC relation attribute assignments (BA_REL_); this statement is not currently in the CANdb++ known-good export set.
 /// </summary>
 public sealed class DbcRelationAttributeValue
 {

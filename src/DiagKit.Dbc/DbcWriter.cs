@@ -4,8 +4,8 @@ using System.Text;
 namespace DiagKit.Dbc;
 
 /// <summary>
-/// 规范化 DBC writer。<br/>
-/// Normalized DBC writer.
+/// 规范化 DBC writer；默认目标是本库 reload 语义等价，CANdb++ known-good 导出需显式选择兼容 profile。<br/>
+/// Normalized DBC writer; the default targets this library's reload semantic equivalence, and CANdb++ known-good export requires an explicit compatibility profile.
 /// </summary>
 public static class DbcWriter
 {
@@ -213,7 +213,7 @@ public static class DbcWriter
         AppendAttributeDefaults(builder, document, newline);
         AppendAttributeValues(builder, document, options, newline);
         AppendLongSymbolAttributeValues(builder, document, options, newline);
-        AppendRelationAttributes(builder, document, newline);
+        AppendRelationAttributes(builder, document, options, newline);
         AppendValueDescriptions(builder, document, options, newline);
         AppendSignalValueTypes(builder, document, options, newline);
         AppendExtendedMultiplexing(builder, document, options, newline);
@@ -409,6 +409,11 @@ public static class DbcWriter
 
         foreach (var variable in EnumerateEnvironmentVariables(document, options))
         {
+            if (options.CompatibilityProfile == DbcWriterCompatibilityProfile.CanDbPlusKnownGood)
+            {
+                continue;
+            }
+
             foreach (var value in variable.Attributes.Values.OrderBy(value => value.Name, StringComparer.Ordinal))
             {
                 if (IsLongSymbolAttributeName(value.Name))
@@ -541,6 +546,11 @@ public static class DbcWriter
 
         foreach (var variable in EnumerateEnvironmentVariables(document, options))
         {
+            if (options.CompatibilityProfile == DbcWriterCompatibilityProfile.CanDbPlusKnownGood)
+            {
+                continue;
+            }
+
             if (!NeedsEnvironmentVariableLongSymbolValue(variable, options))
             {
                 continue;
@@ -617,7 +627,7 @@ public static class DbcWriter
             : nodesByExportName.Values;
     }
 
-    private static void AppendRelationAttributes(StringBuilder builder, DbcDocument document, string newline)
+    private static void AppendRelationAttributes(StringBuilder builder, DbcDocument document, DbcWriterOptions options, string newline)
     {
         foreach (var definition in document.RelationAttributeDefinitions.Values.OrderBy(definition => definition.Name, StringComparer.Ordinal))
         {
@@ -632,22 +642,29 @@ public static class DbcWriter
 
         foreach (var item in document.RelationAttributeDefaults.Values.OrderBy(item => item.Name, StringComparer.Ordinal))
         {
+            document.RelationAttributeDefinitions.TryGetValue(item.Name, out var definition);
             builder.Append("BA_DEF_DEF_REL_ \"")
                 .Append(EscapeQuotedText(item.Name))
                 .Append("\" ")
-                .Append(FormatRawMetadataValue(item.RawValue))
+                .Append(FormatRelationMetadataValue(item.RawValue, definition))
                 .Append(';')
                 .Append(newline);
         }
 
+        if (options.CompatibilityProfile == DbcWriterCompatibilityProfile.CanDbPlusKnownGood)
+        {
+            return;
+        }
+
         foreach (var item in document.RelationAttributes)
         {
+            document.RelationAttributeDefinitions.TryGetValue(item.Name, out var definition);
             builder.Append("BA_REL_ \"")
                 .Append(EscapeQuotedText(item.Name))
                 .Append("\" ")
                 .Append(item.Target)
                 .Append(' ')
-                .Append(FormatRawMetadataValue(item.RawValue))
+                .Append(FormatRelationMetadataValue(item.RawValue, definition))
                 .Append(';')
                 .Append(newline);
         }
@@ -940,6 +957,17 @@ public static class DbcWriter
         return IsNumericAttributeRawValue(rawValue) || DbcWriteValidator.IsValidIdentifier(rawValue)
             ? rawValue
             : "\"" + EscapeQuotedText(rawValue) + "\"";
+    }
+
+    private static string FormatRelationMetadataValue(string rawValue, DbcRelationAttributeDefinition? definition)
+    {
+        return definition?.ValueKind switch
+        {
+            DbcAttributeValueKind.String => "\"" + EscapeQuotedText(rawValue) + "\"",
+            DbcAttributeValueKind.Enum when IsNumericAttributeRawValue(rawValue) => rawValue,
+            DbcAttributeValueKind.Enum => "\"" + EscapeQuotedText(rawValue) + "\"",
+            _ => FormatRawMetadataValue(rawValue),
+        };
     }
 
     private static bool IsLongSymbolAttributeName(string name)

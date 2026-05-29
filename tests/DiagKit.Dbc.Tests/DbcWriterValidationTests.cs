@@ -786,6 +786,46 @@ public sealed class DbcWriterValidationTests
     }
 
     [TestMethod]
+    public void WriteText_CanDbPlusKnownGoodStrictRejectsKnownUnsupportedMetadata()
+    {
+        var document = CreateCanDbPlusCompatibilityDocument();
+        var options = new DbcWriterOptions
+        {
+            CompatibilityProfile = DbcWriterCompatibilityProfile.CanDbPlusKnownGood,
+        };
+
+        var result = DbcWriter.WriteText(document, options);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.AreEqual(2, result.Errors.Count(x => x.Code == "DBC_WRITE_UNSUPPORTED_CANDB_PLUS_METADATA"));
+        Assert.IsTrue(result.Errors.Any(x => x.Message.Contains("Environment variable 'Ignition'", StringComparison.Ordinal)));
+        Assert.IsTrue(result.Errors.Any(x => x.Message.Contains("Relation attribute 'GenSigTimeoutTime'", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void WriteText_CanDbPlusKnownGoodLenientOmitsKnownUnsupportedMetadataAndWarns()
+    {
+        var document = CreateCanDbPlusCompatibilityDocument();
+        var options = new DbcWriterOptions
+        {
+            CompatibilityProfile = DbcWriterCompatibilityProfile.CanDbPlusKnownGood,
+            Mode = DbcWriteMode.Lenient,
+        };
+
+        var result = DbcWriter.WriteText(document, options);
+
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        Assert.AreEqual(2, result.Warnings.Count(x => x.Code == "DBC_WRITE_UNSUPPORTED_CANDB_PLUS_METADATA"));
+        Assert.AreEqual(0, result.Errors.Count);
+        var text = result.GetTextOrThrow();
+        StringAssert.Contains(text, "EV_ Ignition : 0 [0|1] \"bool\" 0 1 DUMMY_NODE_VECTOR0 HOST;");
+        StringAssert.Contains(text, "BA_DEF_REL_ BU_SG_REL_ \"GenSigTimeoutTime\" INT 0 65535;");
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"GenSigTimeoutTime\" 0;");
+        Assert.IsFalse(text.Contains("BA_ \"EnvKind\" EV_ Ignition", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("BA_REL_ \"GenSigTimeoutTime\"", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void WriteText_InvalidEnvironmentVariableNumbersOrAccessType_ReturnsInvalidEnvironmentVariableError()
     {
         var cases = new[]
@@ -843,6 +883,56 @@ public sealed class DbcWriterValidationTests
         var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
         Assert.IsTrue(reloaded.TryResolveEnvironmentVariable("Environment_Variable_Long_Name", out _));
         Assert.IsTrue(reloaded.TryResolveEnvironmentVariable("EnvShort", out _));
+    }
+
+    private static DbcDocument CreateCanDbPlusCompatibilityDocument()
+    {
+        var vcu = new DbcNode("VCU");
+        var host = new DbcNode("HOST");
+        var ignition = new DbcEnvironmentVariable(
+            "Ignition",
+            0,
+            0,
+            1,
+            "bool",
+            0,
+            1,
+            "DUMMY_NODE_VECTOR0",
+            [host],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["EnvKind"] = new("EnvKind", DbcAttributeValueKind.String, "Calibration", "Calibration"),
+            });
+        return new DbcDocument(
+            [vcu, host],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    vcu,
+                    [new DbcSignal("Speed", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [host])]),
+            ],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["EnvKind"] = new("EnvKind", DbcAttributeOwnerKind.EnvironmentVariable, DbcAttributeValueKind.String),
+            },
+            environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
+            {
+                [ignition.Name] = ignition,
+            },
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["GenSigTimeoutTime"] = new("GenSigTimeoutTime", "BU_SG_REL_", DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["GenSigTimeoutTime"] = new("GenSigTimeoutTime", "0"),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("GenSigTimeoutTime", "BU_SG_REL_ VCU 256 Speed", "100"),
+            ]);
     }
 
     [TestMethod]

@@ -28,7 +28,7 @@ internal static partial class DbcWriteValidator
 
         var diagnostics = new List<DbcDiagnostic>();
         var metadataValidatedNodes = new HashSet<DbcNode>();
-        ValidateDocumentMetadata(document, diagnostics);
+        ValidateDocumentMetadata(document, options, diagnostics);
         ValidateObjectName("node", document.Nodes.Select(x => DbcWriterNameFormatter.GetNodeExportName(x, options)), diagnostics);
         ValidateObjectName("message", document.Messages.Select(x => DbcWriterNameFormatter.GetMessageExportName(x, options)), diagnostics);
         ValidateObjectName("environment variable", document.EnvironmentVariables.Values.Select(x => DbcWriterNameFormatter.GetEnvironmentVariableExportName(x, options)), diagnostics);
@@ -63,6 +63,7 @@ internal static partial class DbcWriteValidator
             ValidateLongSymbolExport("Environment variable", variable.Name, variableExportName, diagnostics);
             ValidateReloadableNameAliases("Environment variable", variable.Name, variableExportName, variable.NameAliases, diagnostics);
             ValidateEnvironmentVariable(variable, diagnostics);
+            ValidateCanDbPlusEnvironmentVariableCompatibility(variable, variableExportName, options, diagnostics);
             ValidateAttributeValues("Environment variable", variable.Name, variable.Name, variable.Attributes, document, diagnostics);
             foreach (var accessNode in variable.AccessNodes)
             {
@@ -319,7 +320,7 @@ internal static partial class DbcWriteValidator
         }
     }
 
-    private static void ValidateDocumentMetadata(DbcDocument document, List<DbcDiagnostic> diagnostics)
+    private static void ValidateDocumentMetadata(DbcDocument document, DbcWriterOptions options, List<DbcDiagnostic> diagnostics)
     {
         ValidateOptionalQuotedText("Document", "network", "comment", document.Comment, diagnostics);
         foreach (var definition in document.AttributeDefinitions.Values)
@@ -349,10 +350,10 @@ internal static partial class DbcWriteValidator
         }
 
         ValidateAttributeValues("Document", "network", "network", document.Attributes, document, diagnostics);
-        ValidateRelationMetadata(document, diagnostics);
+        ValidateRelationMetadata(document, options, diagnostics);
     }
 
-    private static void ValidateRelationMetadata(DbcDocument document, List<DbcDiagnostic> diagnostics)
+    private static void ValidateRelationMetadata(DbcDocument document, DbcWriterOptions options, List<DbcDiagnostic> diagnostics)
     {
         foreach (var definition in document.RelationAttributeDefinitions.Values)
         {
@@ -389,6 +390,14 @@ internal static partial class DbcWriteValidator
         foreach (var item in document.RelationAttributes)
         {
             ValidateQuotedText("Relation attribute", item.Name, "name", item.Name, diagnostics);
+            if (options.CompatibilityProfile == DbcWriterCompatibilityProfile.CanDbPlusKnownGood)
+            {
+                AddCanDbPlusUnsupportedMetadata(
+                    $"Relation attribute '{item.Name}' assignment uses BA_REL_, which is preserved for library reload but is not in the CANdb++ known-good export set.",
+                    options,
+                    diagnostics);
+            }
+
             if (!IsSafeRelationTarget(item.Target))
             {
                 diagnostics.Add(Error(
@@ -403,6 +412,34 @@ internal static partial class DbcWriteValidator
             }
 
             ValidateRelationAttributeRawValue("Relation attribute", item.Target, item.Name, item.RawValue, definition, diagnostics);
+        }
+    }
+
+    private static void ValidateCanDbPlusEnvironmentVariableCompatibility(
+        DbcEnvironmentVariable variable,
+        string variableExportName,
+        DbcWriterOptions options,
+        List<DbcDiagnostic> diagnostics)
+    {
+        if (options.CompatibilityProfile != DbcWriterCompatibilityProfile.CanDbPlusKnownGood)
+        {
+            return;
+        }
+
+        foreach (var attribute in variable.Attributes.Values)
+        {
+            AddCanDbPlusUnsupportedMetadata(
+                $"Environment variable '{variable.Name}' attribute '{attribute.Name}' uses BA_ ... EV_, which is preserved for library reload but is not in the CANdb++ known-good export set.",
+                options,
+                diagnostics);
+        }
+
+        if (!string.Equals(variable.Name, variableExportName, StringComparison.Ordinal))
+        {
+            AddCanDbPlusUnsupportedMetadata(
+                $"Environment variable '{variable.Name}' requires SystemEnvVarLongSymbol BA_ ... EV_ metadata to preserve its canonical name, which is not in the CANdb++ known-good export set.",
+                options,
+                diagnostics);
         }
     }
 
@@ -1561,6 +1598,20 @@ internal static partial class DbcWriteValidator
     private static void AddUnsupportedMetadata(string message, List<DbcDiagnostic> diagnostics)
     {
         diagnostics.Add(Error("DBC_WRITE_UNSUPPORTED_METADATA", message));
+    }
+
+    private static void AddCanDbPlusUnsupportedMetadata(
+        string message,
+        DbcWriterOptions options,
+        List<DbcDiagnostic> diagnostics)
+    {
+        var severity = options.Mode == DbcWriteMode.Lenient
+            ? DbcDiagnosticSeverity.Warning
+            : DbcDiagnosticSeverity.Error;
+        diagnostics.Add(new DbcDiagnostic(
+            severity,
+            "DBC_WRITE_UNSUPPORTED_CANDB_PLUS_METADATA",
+            message));
     }
 
     [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]

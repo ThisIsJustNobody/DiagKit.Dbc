@@ -321,6 +321,55 @@ public sealed class DbcWriterReloadEquivalenceTests
     }
 
     [TestMethod]
+    public void WriteText_RelationStringIdentifierToken_QuotesAndReloadsEquivalentRawValues()
+    {
+        var vcu = new DbcNode("ECU");
+        var host = new DbcNode("HOST");
+        var original = new DbcDocument(
+            [vcu, host],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    vcu,
+                    [new DbcSignal("Speed", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [host])]),
+            ],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationText"] = new("RelationText", "BU_SG_REL_", DbcAttributeValueKind.String),
+                ["RelationMode"] = new("RelationMode", "BU_SG_REL_", DbcAttributeValueKind.Enum, ["Calibration", "Production"]),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationText"] = new("RelationText", "Calibration"),
+                ["RelationMode"] = new("RelationMode", "Production"),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("RelationText", "BU_SG_REL_ ECU 256 Speed", "Calibration"),
+                new DbcRelationAttributeValue("RelationMode", "BU_SG_REL_ ECU 256 Speed", "Production"),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationText\" \"Calibration\";");
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationMode\" \"Production\";");
+        StringAssert.Contains(text, "BA_REL_ \"RelationText\" BU_SG_REL_ ECU 256 Speed \"Calibration\";");
+        StringAssert.Contains(text, "BA_REL_ \"RelationMode\" BU_SG_REL_ ECU 256 Speed \"Production\";");
+        Assert.IsFalse(text.Contains("BA_DEF_DEF_REL_ \"RelationText\" Calibration;", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("BA_REL_ \"RelationText\" BU_SG_REL_ ECU 256 Speed Calibration;", StringComparison.Ordinal));
+        var result = DbcLoader.LoadText(text, DbcLoadOptions.Lenient);
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var reloaded = result.GetDocumentOrThrow();
+        Assert.AreEqual("Calibration", reloaded.RelationAttributeDefaults["RelationText"].RawValue);
+        Assert.AreEqual("Production", reloaded.RelationAttributeDefaults["RelationMode"].RawValue);
+        CollectionAssert.AreEqual(
+            new[] { "Calibration", "Production" },
+            reloaded.RelationAttributes.Select(x => x.RawValue).ToArray());
+    }
+
+    [TestMethod]
     public void WriteText_StringMetadataNumericTokenWithWhitespace_QuotesAndReloadsEquivalentRawValue()
     {
         var ecu = new DbcNode("ECU");

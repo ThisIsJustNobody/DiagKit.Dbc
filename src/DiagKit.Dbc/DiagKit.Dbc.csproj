@@ -35,7 +35,7 @@
     <PackageIcon>diagkit-dbc.png</PackageIcon>
 
     <!-- Release -->
-    <PackageReleaseNotes>Preview compatibility update: normalized DBC writer, semantic document builder, write diagnostics, reload equivalence tests, Vector long-symbol export, and documentation for non-round-trip export boundaries.</PackageReleaseNotes>
+    <PackageReleaseNotes>Preview export update: normalized DBC writer, semantic document builder, reload-equivalence diagnostics, Vector long-symbol export, CANdb++ known-good compatibility profile, relation value formatting fixes, and documentation for non-round-trip export boundaries.</PackageReleaseNotes>
 
     <!-- URL -->
     <PackageProjectUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc</PackageProjectUrl>

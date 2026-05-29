@@ -13,10 +13,29 @@ public enum DbcWriteMode
     Strict,
 
     /// <summary>
-    /// 宽松模式：可降级的问题作为 Warning。<br/>
-    /// Lenient mode: downgrade recoverable issues to warnings where possible.
+    /// 宽松模式：可降级的问题作为 Warning；例如 CANdb++ known-good profile 会省略已知不支持语句。<br/>
+    /// Lenient mode: downgrade recoverable issues to warnings where possible; for example, the CANdb++ known-good profile omits known-unsupported statements.
     /// </summary>
     Lenient,
+}
+
+/// <summary>
+/// DBC writer 兼容性目标。<br/>
+/// Compatibility target used by the DBC writer.
+/// </summary>
+public enum DbcWriterCompatibilityProfile
+{
+    /// <summary>
+    /// 默认规范化导出，目标是本库 reload 语义等价。<br/>
+    /// Default normalized export targeting semantic equivalence when reloaded by this library.
+    /// </summary>
+    ReloadEquivalent,
+
+    /// <summary>
+    /// 仅输出当前已由 CANdb++ 实测通过或低风险的语句；已知不兼容语句在严格模式下报错，在宽松模式下省略并警告。<br/>
+    /// Emits only statements currently known-good or low-risk for CANdb++; known-incompatible statements are errors in strict mode and omitted with warnings in lenient mode.
+    /// </summary>
+    CanDbPlusKnownGood,
 }
 
 /// <summary>
@@ -99,6 +118,12 @@ public sealed class DbcWriterOptions
     /// Write mode.
     /// </summary>
     public DbcWriteMode Mode { get; init; } = DbcWriteMode.Strict;
+
+    /// <summary>
+    /// 兼容性目标。默认值优先保证本库 reload 语义等价，不承诺所有语句都能被 CANdb++ 打开。<br/>
+    /// Compatibility target. The default prioritizes semantic equivalence when reloaded by this library and does not guarantee that every statement opens in CANdb++.
+    /// </summary>
+    public DbcWriterCompatibilityProfile CompatibilityProfile { get; init; } = DbcWriterCompatibilityProfile.ReloadEquivalent;
 
     /// <summary>
     /// 换行策略。<br/>

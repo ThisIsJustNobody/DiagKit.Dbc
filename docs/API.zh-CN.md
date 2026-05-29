@@ -60,8 +60,8 @@ channel.PollDueFrames(now, txSink);
 - `Messages`: DBC message。Message 记录 transmitter、payload 长度、CAN identifier、CAN FD flags、cycle time、send type、timeout 等。`SupportsSingleFrameRuntime` 表示该 message 是否可由当前 CAN/CAN FD 单帧 runtime 直接处理。
 - `Signals`: Message 持有 signal。Signal 记录 start bit、length、byte order、factor/offset、unit、receivers、multiplexing、timeout 等。
 - `Attributes`: DBC 属性定义、默认值和对象赋值会尽量保留，并把常见属性映射为语义字段。
-- `EnvironmentVariables`: `EV_` 环境变量元数据。它不会被当作 CAN frame signal 参与编解码；`BA_ ... EV_ ...` 属性会保存在环境变量的 `Attributes` 中。
-- `RelationAttributeDefinitions` / `RelationAttributeDefaults` / `RelationAttributes`: `BA_DEF_REL_`、`BA_DEF_DEF_REL_`、`BA_REL_` 的可追溯原始元数据。首版不会猜测复杂关系目标并应用到 message/signal。
+- `EnvironmentVariables`: `EV_` 环境变量元数据。它不会被当作 CAN frame signal 参与编解码；`BA_ ... EV_ ...` 属性会保存在环境变量的 `Attributes` 中。注意这表示本库可保留/重载，不等同于所有 CANdb++ 版本都接受该赋值语句。
+- `RelationAttributeDefinitions` / `RelationAttributeDefaults` / `RelationAttributes`: `BA_DEF_REL_`、`BA_DEF_DEF_REL_`、`BA_REL_` 的可追溯原始元数据。首版不会猜测复杂关系目标并应用到 message/signal；当前 CANdb++ known-good 只包含 relation definition/default，`BA_REL_` assignment 仍标记为兼容导出不支持。
 
 只需要 DBC 元数据、暂时不需要 runtime 状态时，可以直接加载文档：
 
@@ -191,6 +191,29 @@ var text = DbcWriter.WriteTextOrThrow(builder.Build());
 ```
 
 Writer 会在可能导致 reload 后语义漂移的场景输出 `DBC_WRITE_*` diagnostics。`WriteText` 返回 `DbcWriteResult`，调用方可以先展示 diagnostics；`WriteTextOrThrow` 适合 CI 或工具链中把 Error 级问题直接作为失败处理。
+
+默认 writer profile 是 `DbcWriterCompatibilityProfile.ReloadEquivalent`，以本库 reload 语义等价为目标。这个模式会保留本库可解析的 raw metadata，因此可能输出 CANdb++ 尚未验证或已知不支持的语句，例如普通 `BA_ ... EV_ ...` 环境变量属性赋值和 `BA_REL_` relation assignment。
+
+如果导出目标是“尽量能被 CANdb++ 打开”的 known-good 子集，使用 `CanDbPlusKnownGood`：
+
+```csharp
+var result = DbcWriter.WriteText(document, new DbcWriterOptions
+{
+    CompatibilityProfile = DbcWriterCompatibilityProfile.CanDbPlusKnownGood,
+});
+```
+
+严格模式下，已知不属于 CANdb++ known-good 的语句会产生 `DBC_WRITE_UNSUPPORTED_CANDB_PLUS_METADATA` Error 并阻止写出；宽松模式下会省略这些语句并返回 Warning：
+
+```csharp
+var result = DbcWriter.WriteText(document, new DbcWriterOptions
+{
+    CompatibilityProfile = DbcWriterCompatibilityProfile.CanDbPlusKnownGood,
+    Mode = DbcWriteMode.Lenient,
+});
+```
+
+当前已实测可作为 known-good 的第 5 类边界包括 `EV_`、`BO_TX_BU_`、`BA_DEF_ EV_`、`BA_DEF_REL_` 和 `BA_DEF_DEF_REL_`。普通 `BA_ ... EV_ ...` 属性赋值和 `BA_REL_` 赋值不进入 known-good 输出，除非后续获得真实 Vector/CANdb++ 可打开样例或官方语法。
 
 ## CAN ID 与 DBC 原始 ID
 

@@ -49,6 +49,8 @@ API 集成方式见 [API 使用指南](docs/API.zh-CN.md)。
 
 `DbcWriter` 从不可变 `DbcDocument` 生成稳定、可重新加载的 DBC 文本。它适用于新建、语义编辑后生成、CI 规范化导出，并以 reload 语义等价为目标。这是规范化导出，不是逐字节 round-trip 编辑；不承诺保留原文件空白、语句顺序、未知语句或注释位置。
 
+默认 `DbcWriterCompatibilityProfile.ReloadEquivalent` 优先保留本库可重新加载的元数据，因此可能输出当前尚未列入 CANdb++ known-good 的语句，例如普通 `BA_ ... EV_ ...` 环境变量属性赋值和 `BA_REL_` 关系属性赋值。面向 CANdb++ 打开验证时，请使用 `DbcWriterCompatibilityProfile.CanDbPlusKnownGood`：严格模式遇到这些已知不支持语句会失败，宽松模式会省略它们并返回 warning。当前 CANdb++ known-good 集合包括 `EV_`、`BO_TX_BU_`、`BA_DEF_REL_` 和 `BA_DEF_DEF_REL_`；`BA_REL_` assignment 需要真实 Vector/CANdb++ 样例或官方语法后再重新支持。
+
 ```csharp
 var document = DbcLoader.LoadTextDocumentOrThrow(dbcText);
 var result = DbcWriter.WriteText(document);
@@ -94,7 +96,7 @@ dotnet run --project tests/DiagKit.Dbc.Benchmarks/DiagKit.Dbc.Benchmarks.csproj 
 
 ## 包状态
 
-本项目使用 MIT 许可证。NuGet 包版本由 MinVer 根据 Git tag 自动生成，tag 前缀为 `v`。首个预览 tag 为 `v1.0.0-preview`；后续预览使用 `v1.0.0-preview.1` 这类点分编号。发布流程对齐 DiagKit 家族：分支/PR 运行 CI，推送 tag 自动发布 NuGet 并创建 GitHub Release。
+本项目使用 MIT 许可证。NuGet 包版本由 MinVer 根据 Git tag 自动生成，tag 前缀为 `v`，项目文件不硬编码发布版本号。下一次计划预览 tag 为 `v1.2.0-preview`。CI 覆盖 pull request 以及 `main`、`master`、`release/**` 分支 push；推送 tag 后自动发布 NuGet 并创建 GitHub Release。
 
 发布说明、贡献指南和安全漏洞报告方式见 [CHANGELOG.md](CHANGELOG.md)、[CONTRIBUTING.md](CONTRIBUTING.md) 和 [SECURITY.md](SECURITY.md)。
 发布流程见 [发布清单](docs/PUBLISHING.zh-CN.md)。

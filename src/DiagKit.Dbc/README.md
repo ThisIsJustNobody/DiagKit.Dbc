@@ -47,6 +47,8 @@ For a fuller integration guide, see [API usage guide](https://github.com/ThisIsJ
 
 `DbcWriter` writes stable DBC text from immutable `DbcDocument` metadata for newly built documents, semantic edits, and CI normalized export. The contract is reload semantic equivalence, not byte-for-byte round-trip editing: original whitespace, statement order, unknown statements, and comment placement are not preserved.
 
+The default writer profile is `ReloadEquivalent`, which may emit metadata preserved by this library but not currently known-good in CANdb++, including general `BA_ ... EV_ ...` environment-variable attributes and `BA_REL_` relation assignments. Use `DbcWriterCompatibilityProfile.CanDbPlusKnownGood` for CANdb++-oriented export; strict mode fails on known-unsupported statements, while lenient mode omits them and reports warnings.
+
 ```csharp
 var document = DbcLoader.LoadTextDocumentOrThrow(dbcText);
 var result = DbcWriter.WriteText(document);

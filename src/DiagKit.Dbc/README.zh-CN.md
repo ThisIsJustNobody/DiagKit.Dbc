@@ -47,6 +47,8 @@
 
 `DbcWriter` 从不可变 `DbcDocument` 写出稳定、可重新加载的 DBC 文本，适用于新建、语义编辑后生成和 CI 规范化导出。它承诺 reload 语义等价，不是逐字节 round-trip 编辑；不保留原文件空白、语句顺序、未知语句或注释位置。
 
+默认 writer profile 是 `ReloadEquivalent`，会优先保留本库可重新加载的元数据，但可能输出当前尚未列入 CANdb++ known-good 的普通 `BA_ ... EV_ ...` 环境变量属性和 `BA_REL_` 关系属性赋值。面向 CANdb++ 导出时使用 `DbcWriterCompatibilityProfile.CanDbPlusKnownGood`；严格模式会失败关闭，宽松模式会省略这些语句并返回 warning。
+
 ```csharp
 var document = DbcLoader.LoadTextDocumentOrThrow(dbcText);
 var result = DbcWriter.WriteText(document);

@@ -4,14 +4,14 @@
 
 ## 发布范围
 
-当前首个预览版本：
+当前计划预览版本：
 
-- tag: `v1.0.0-preview`
-- package version: `1.0.0-preview`
+- tag: `v1.2.0-preview`
+- package version: `1.2.0-preview`
 - package id: `DiagKit.Dbc`
 - license: MIT
 
-如果 tag 仅存在于本地且包尚未发布，可以在最终发布提交上重建该 tag。tag 一旦推送到远端或包已经发布到 NuGet，就不要移动；需要修正时发布新的 tag，例如 `v1.0.0-preview.1`、`v1.0.1-preview` 或后续稳定版。
+版本号不写入项目文件，由 MinVer 根据 `v*` tag 自动生成。tag 一旦推送到远端或包已经发布到 NuGet，就不要移动；需要修正时发布新的 tag，例如 `v1.2.0-preview.1`、`v1.2.1-preview` 或后续稳定版。
 
 ## 本地预检
 
@@ -53,28 +53,22 @@ dotnet run --project tests/DiagKit.Dbc.Benchmarks/DiagKit.Dbc.Benchmarks.csproj 
 
 ## Tag 策略
 
-首个预览版 tag 示例：
+当前预览版 tag 示例：
 
 ```bash
-git tag v1.0.0-preview
+git tag v1.2.0-preview
 git push origin main
-git push origin v1.0.0-preview
+git push origin v1.2.0-preview
 ```
 
-如果 `v1.0.0-preview` 仅存在于本地且需要移动到最终提交：
-
-```bash
-git tag -f v1.0.0-preview
-```
-
-首个预览版之后如果还需要继续发布预览，使用点分编号，例如 `v1.0.0-preview.1`、`v1.0.0-preview.2`。
+如果当前预览版之后还需要继续发布预览，使用点分编号或新的预览基线，例如 `v1.2.0-preview.1`、`v1.2.0-preview.2` 或 `v1.2.1-preview`。
 
 后续稳定版示例：
 
 ```bash
-git tag v1.0.0
+git tag v1.2.0
 git push origin main
-git push origin v1.0.0
+git push origin v1.2.0
 ```
 
 MinVer 使用 `v` 作为 tag prefix。没有新 tag 的提交会生成递增的 preview metadata，不应作为正式发布版本随意上传。
@@ -87,7 +81,7 @@ MinVer 使用 `v` 作为 tag prefix。没有新 tag 的提交会生成递增的 
 
 1. 在本地完成预检和包内容检查。
 2. 确认 `main` 已包含要发布的提交。
-3. 创建目标 tag，例如首个预览版 `v1.0.0-preview`，或后续预览版 `v1.0.0-preview.1`。
+3. 创建目标 tag，例如当前计划预览版 `v1.2.0-preview`，或后续预览版 `v1.2.0-preview.1`。
 4. 推送 `main`，等待 `CI` workflow 通过。
 5. 推送 tag，触发 `Release` workflow。
 6. 在 GitHub Actions 检查发布作业；发布成功后确认 NuGet 页面和 GitHub Release。
