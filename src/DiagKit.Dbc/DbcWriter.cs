@@ -102,6 +102,9 @@ public static class DbcWriter
             builder.Append("    BA_DEF_REL_").Append(newline);
             builder.Append("    BA_REL_").Append(newline);
             builder.Append("    BA_DEF_DEF_REL_").Append(newline);
+            builder.Append("    BU_SG_REL_").Append(newline);
+            builder.Append("    BU_EV_REL_").Append(newline);
+            builder.Append("    BU_BO_REL_").Append(newline);
             builder.Append("    SG_MUL_VAL_").Append(newline).Append(newline);
             builder.Append("BS_:").Append(newline).Append(newline);
         }

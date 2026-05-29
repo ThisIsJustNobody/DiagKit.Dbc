@@ -14,6 +14,9 @@ public sealed class DbcWriterTests
         Assert.AreEqual(0, result.Errors.Count);
         StringAssert.Contains(result.GetTextOrThrow(), "VERSION \"\"");
         StringAssert.Contains(result.GetTextOrThrow(), "NS_ :");
+        StringAssert.Contains(result.GetTextOrThrow(), "    BU_SG_REL_");
+        StringAssert.Contains(result.GetTextOrThrow(), "    BU_EV_REL_");
+        StringAssert.Contains(result.GetTextOrThrow(), "    BU_BO_REL_");
         StringAssert.Contains(result.GetTextOrThrow(), "BS_:");
         StringAssert.Contains(result.GetTextOrThrow(), "BU_:");
     }
