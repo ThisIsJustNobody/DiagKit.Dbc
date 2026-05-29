@@ -1,0 +1,852 @@
+namespace DiagKit.Dbc.Tests;
+
+[TestClass]
+public sealed class DbcWriterReloadEquivalenceTests
+{
+    [TestMethod]
+    public void WriteText_LongSymbolNames_ReloadsCanonicalNamesAndSourceAliases()
+    {
+        var ecu = new DbcNode("VeryLongEngineControllerName", sourceName: "ECU");
+        var tool = new DbcNode("Tool");
+        var signal = new DbcSignal(
+            "VeryLongVehicleSpeedSignalName",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [tool],
+            sourceName: "VehSpdShort");
+        var message = new DbcMessage(
+            new DbcRawMessageId(512),
+            "VeryLongVehicleStatusMessageName",
+            8,
+            ecu,
+            [signal],
+            sourceName: "VehicleStatusShort");
+        var variable = new DbcEnvironmentVariable(
+            "Environment_Variable_Long_Name",
+            0,
+            0,
+            1,
+            "",
+            0,
+            1,
+            "DUMMY_NODE_VECTOR0",
+            sourceName: "EnvShort");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [message],
+            environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
+            {
+                [variable.Name] = variable,
+            });
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BU_: ECU Tool");
+        StringAssert.Contains(text, "BO_ 512 VehicleStatusShort: 8 ECU");
+        StringAssert.Contains(text, " SG_ VehSpdShort : 0|16@1+ (1,0) [0|250] \"km/h\" Tool");
+        StringAssert.Contains(text, "EV_ EnvShort : 0 [0|1] \"\" 0 1 DUMMY_NODE_VECTOR0;");
+        StringAssert.Contains(text, "BA_ \"SystemNodeLongSymbol\" BU_ ECU \"VeryLongEngineControllerName\";");
+        StringAssert.Contains(text, "BA_ \"SystemMessageLongSymbol\" BO_ 512 \"VeryLongVehicleStatusMessageName\";");
+        StringAssert.Contains(text, "BA_ \"SystemSignalLongSymbol\" SG_ 512 VehSpdShort \"VeryLongVehicleSpeedSignalName\";");
+        StringAssert.Contains(text, "BA_ \"SystemEnvVarLongSymbol\" EV_ EnvShort \"Environment_Variable_Long_Name\";");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("VeryLongEngineControllerName", out _));
+        Assert.IsTrue(reloaded.TryResolveNode("ECU", out _));
+        Assert.IsTrue(reloaded.TryResolveMessage("VeryLongVehicleStatusMessageName", out var reloadedMessage));
+        Assert.IsTrue(reloaded.TryResolveMessage("VehicleStatusShort", out _));
+        Assert.IsTrue(reloadedMessage.TryResolveSignal("VeryLongVehicleSpeedSignalName", out _));
+        Assert.IsTrue(reloadedMessage.TryResolveSignal("VehSpdShort", out _));
+        Assert.IsTrue(reloaded.TryResolveEnvironmentVariable("Environment_Variable_Long_Name", out _));
+        Assert.IsTrue(reloaded.TryResolveEnvironmentVariable("EnvShort", out _));
+    }
+
+    [TestMethod]
+    public void WriteText_Attributes_ReloadsDefinitionsDefaultsValuesAndSemanticMappings()
+    {
+        var ecu = new DbcNode(
+            "ECU",
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["NodeKind"] = new("NodeKind", DbcAttributeValueKind.String, "Controller", "Controller"),
+            });
+        var tool = new DbcNode("Tool");
+        var speed = new DbcSignal(
+            "Speed",
+            0,
+            16,
+            DbcByteOrder.Intel,
+            DbcSignalValueType.Unsigned,
+            1,
+            0,
+            0,
+            250,
+            "km/h",
+            [tool],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["GenSigStartValue"] = new("GenSigStartValue", DbcAttributeValueKind.Integer, "5", 5),
+            },
+            initialValue: 5);
+        var message = new DbcMessage(
+            new DbcRawMessageId(256),
+            "VehicleStatus",
+            8,
+            ecu,
+            [speed],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["GenMsgCycleTime"] = new("GenMsgCycleTime", DbcAttributeValueKind.Integer, "10", 10),
+                ["VFrameFormat"] = new("VFrameFormat", DbcAttributeValueKind.Enum, "14", "StandardCAN_FD"),
+            },
+            cycleTimeMs: 10,
+            frameFlags: DbcFrameFlags.FlexibleDataRate);
+        var original = new DbcDocument(
+            [ecu, tool],
+            [message],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["NetworkKind"] = new(
+                    "NetworkKind",
+                    DbcAttributeOwnerKind.Network,
+                    DbcAttributeValueKind.String,
+                    defaultValue: new DbcAttributeValue("NetworkKind", DbcAttributeValueKind.String, "Vehicle", "Vehicle")),
+                ["NodeKind"] = new("NodeKind", DbcAttributeOwnerKind.Node, DbcAttributeValueKind.String),
+                ["GenMsgCycleTime"] = new("GenMsgCycleTime", DbcAttributeOwnerKind.Message, DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+                ["VFrameFormat"] = new(
+                    "VFrameFormat",
+                    DbcAttributeOwnerKind.Message,
+                    DbcAttributeValueKind.Enum,
+                    ["StandardCAN", "ExtendedCAN", "reserved", "J1939PG", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "reserved", "StandardCAN_FD", "ExtendedCAN_FD"]),
+                ["GenSigStartValue"] = new("GenSigStartValue", DbcAttributeOwnerKind.Signal, DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+            },
+            new Dictionary<string, DbcAttributeValue>
+            {
+                ["NetworkKind"] = new("NetworkKind", DbcAttributeValueKind.String, "Vehicle", "Vehicle"),
+            });
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_DEF_ \"NetworkKind\" STRING;");
+        StringAssert.Contains(text, "BA_DEF_ BU_ \"NodeKind\" STRING;");
+        StringAssert.Contains(text, "BA_DEF_DEF_ \"NetworkKind\" \"Vehicle\";");
+        StringAssert.Contains(text, "BA_ \"NetworkKind\" \"Vehicle\";");
+        StringAssert.Contains(text, "BA_ \"NodeKind\" BU_ ECU \"Controller\";");
+        StringAssert.Contains(text, "BA_ \"GenMsgCycleTime\" BO_ 256 10;");
+        StringAssert.Contains(text, "BA_ \"VFrameFormat\" BO_ 256 14;");
+        StringAssert.Contains(text, "BA_ \"GenSigStartValue\" SG_ 256 Speed 5;");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.AreEqual("Vehicle", reloaded.AttributeDefinitions["NetworkKind"].DefaultValue?.Value);
+        Assert.AreEqual("Vehicle", reloaded.Attributes["NetworkKind"].Value);
+        Assert.AreEqual("Controller", reloaded.ResolveNode("ECU").Attributes["NodeKind"].Value);
+        var reloadedMessage = reloaded.ResolveMessage("VehicleStatus");
+        Assert.AreEqual(10, reloadedMessage.CycleTimeMs);
+        Assert.AreEqual(DbcFrameFlags.FlexibleDataRate, reloadedMessage.FrameFlags & DbcFrameFlags.FlexibleDataRate);
+        var reloadedSignal = reloadedMessage.ResolveSignal("Speed");
+        Assert.AreEqual(5d, reloadedSignal.InitialValue);
+        Assert.AreEqual(5, reloadedSignal.Attributes["GenSigStartValue"].Value);
+    }
+
+    [TestMethod]
+    public void WriteText_EnvironmentVariables_ReloadsEvStatementsAttributesAndAccessNodes()
+    {
+        var vcu = new DbcNode("VCU");
+        var host = new DbcNode("HOST");
+        var ignition = new DbcEnvironmentVariable(
+            "Ignition",
+            0,
+            0,
+            1,
+            "bool",
+            0,
+            1,
+            "DUMMY_NODE_VECTOR0",
+            [host, vcu],
+            attributes: new Dictionary<string, DbcAttributeValue>
+            {
+                ["EnvKind"] = new("EnvKind", DbcAttributeValueKind.String, "Calibration", "Calibration"),
+            });
+        var original = new DbcDocument(
+            [vcu, host],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["EnvKind"] = new("EnvKind", DbcAttributeOwnerKind.EnvironmentVariable, DbcAttributeValueKind.String),
+            },
+            environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
+            {
+                [ignition.Name] = ignition,
+            });
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "EV_ Ignition : 0 [0|1] \"bool\" 0 1 DUMMY_NODE_VECTOR0 HOST,VCU;");
+        StringAssert.Contains(text, "BA_DEF_ EV_ \"EnvKind\" STRING;");
+        StringAssert.Contains(text, "BA_ \"EnvKind\" EV_ Ignition \"Calibration\";");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        var variable = reloaded.ResolveEnvironmentVariable("Ignition");
+        Assert.AreEqual("bool", variable.Unit);
+        Assert.AreEqual(1, variable.Identifier);
+        CollectionAssert.AreEqual(new[] { "HOST", "VCU" }, variable.AccessNodes.Select(x => x.Name).ToArray());
+        Assert.AreEqual("Calibration", variable.Attributes["EnvKind"].Value);
+    }
+
+    [TestMethod]
+    public void WriteText_RelationMetadata_ReloadsRawRelationDefinitionsDefaultsAndValues()
+    {
+        var vcu = new DbcNode("VCU");
+        var host = new DbcNode("HOST");
+        var original = new DbcDocument(
+            [vcu, host],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    vcu,
+                    [new DbcSignal("Speed", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [host])]),
+            ],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["GenSigTimeoutTime"] = new("GenSigTimeoutTime", "BU_SG_REL_", DbcAttributeValueKind.Integer, minimum: 0, maximum: 65535),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["GenSigTimeoutTime"] = new("GenSigTimeoutTime", "0"),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("GenSigTimeoutTime", "BU_SG_REL_ VCU 256 Speed", "100"),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_DEF_REL_ BU_SG_REL_ \"GenSigTimeoutTime\" INT 0 65535;");
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"GenSigTimeoutTime\" 0;");
+        StringAssert.Contains(text, "BA_REL_ \"GenSigTimeoutTime\" BU_SG_REL_ VCU 256 Speed 100;");
+        var result = DbcLoader.LoadText(text, DbcLoadOptions.Lenient);
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var reloaded = result.GetDocumentOrThrow();
+        Assert.AreEqual("BU_SG_REL_", reloaded.RelationAttributeDefinitions["GenSigTimeoutTime"].RelationKind);
+        Assert.AreEqual("0", reloaded.RelationAttributeDefaults["GenSigTimeoutTime"].RawValue);
+        Assert.AreEqual("BU_SG_REL_ VCU 256 Speed", reloaded.RelationAttributes.Single().Target);
+        Assert.AreEqual("100", reloaded.RelationAttributes.Single().RawValue);
+    }
+
+    [TestMethod]
+    public void WriteText_EnumAttributeSpecialFloatLabels_QuotesAndReloadsEquivalentRawValue()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["SpecialMode"] = new(
+                    "SpecialMode",
+                    DbcAttributeOwnerKind.Network,
+                    DbcAttributeValueKind.Enum,
+                    ["-Infinity", "NaN"]),
+            },
+            new Dictionary<string, DbcAttributeValue>
+            {
+                ["SpecialMode"] = new("SpecialMode", DbcAttributeValueKind.Enum, "-Infinity", "-Infinity"),
+            });
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_DEF_ \"SpecialMode\" ENUM \"-Infinity\",\"NaN\";");
+        StringAssert.Contains(text, "BA_ \"SpecialMode\" \"-Infinity\";");
+        Assert.IsFalse(text.Contains("BA_ \"SpecialMode\" -Infinity;", StringComparison.Ordinal));
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.AreEqual("-Infinity", reloaded.Attributes["SpecialMode"].RawValue);
+        Assert.AreEqual("-Infinity", reloaded.Attributes["SpecialMode"].Value);
+    }
+
+    [TestMethod]
+    public void WriteText_RelationStringSpecialNumericTokens_QuotesAndReloadsEquivalentRawValues()
+    {
+        var vcu = new DbcNode("ECU");
+        var host = new DbcNode("HOST");
+        var original = new DbcDocument(
+            [vcu, host],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    vcu,
+                    [new DbcSignal("Speed", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [host])]),
+            ],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationText"] = new("RelationText", "BU_SG_REL_", DbcAttributeValueKind.String),
+                ["RelationHexLike"] = new("RelationHexLike", "BU_SG_REL_", DbcAttributeValueKind.String),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationText"] = new("RelationText", "-Infinity"),
+                ["RelationHexLike"] = new("RelationHexLike", "0xZZ"),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("RelationText", "BU_SG_REL_ ECU 256 Speed", "-Infinity"),
+                new DbcRelationAttributeValue("RelationHexLike", "BU_SG_REL_ ECU 256 Speed", "0xZZ"),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationText\" \"-Infinity\";");
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationHexLike\" \"0xZZ\";");
+        StringAssert.Contains(text, "BA_REL_ \"RelationText\" BU_SG_REL_ ECU 256 Speed \"-Infinity\";");
+        StringAssert.Contains(text, "BA_REL_ \"RelationHexLike\" BU_SG_REL_ ECU 256 Speed \"0xZZ\";");
+        Assert.IsFalse(text.Contains("BA_REL_ \"RelationText\" BU_SG_REL_ ECU 256 Speed -Infinity;", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("BA_REL_ \"RelationHexLike\" BU_SG_REL_ ECU 256 Speed 0xZZ;", StringComparison.Ordinal));
+        var result = DbcLoader.LoadText(text, DbcLoadOptions.Lenient);
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var reloaded = result.GetDocumentOrThrow();
+        Assert.AreEqual("-Infinity", reloaded.RelationAttributeDefaults["RelationText"].RawValue);
+        Assert.AreEqual("0xZZ", reloaded.RelationAttributeDefaults["RelationHexLike"].RawValue);
+        CollectionAssert.AreEqual(
+            new[] { "-Infinity", "0xZZ" },
+            reloaded.RelationAttributes.Select(x => x.RawValue).ToArray());
+    }
+
+    [TestMethod]
+    public void WriteText_RelationStringIdentifierToken_QuotesAndReloadsEquivalentRawValues()
+    {
+        var vcu = new DbcNode("ECU");
+        var host = new DbcNode("HOST");
+        var original = new DbcDocument(
+            [vcu, host],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    vcu,
+                    [new DbcSignal("Speed", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [host])]),
+            ],
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationText"] = new("RelationText", "BU_SG_REL_", DbcAttributeValueKind.String),
+                ["RelationMode"] = new("RelationMode", "BU_SG_REL_", DbcAttributeValueKind.Enum, ["Calibration", "Production"]),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationText"] = new("RelationText", "Calibration"),
+                ["RelationMode"] = new("RelationMode", "Production"),
+            },
+            relationAttributes:
+            [
+                new DbcRelationAttributeValue("RelationText", "BU_SG_REL_ ECU 256 Speed", "Calibration"),
+                new DbcRelationAttributeValue("RelationMode", "BU_SG_REL_ ECU 256 Speed", "Production"),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationText\" \"Calibration\";");
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationMode\" \"Production\";");
+        StringAssert.Contains(text, "BA_REL_ \"RelationText\" BU_SG_REL_ ECU 256 Speed \"Calibration\";");
+        StringAssert.Contains(text, "BA_REL_ \"RelationMode\" BU_SG_REL_ ECU 256 Speed \"Production\";");
+        Assert.IsFalse(text.Contains("BA_DEF_DEF_REL_ \"RelationText\" Calibration;", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("BA_REL_ \"RelationText\" BU_SG_REL_ ECU 256 Speed Calibration;", StringComparison.Ordinal));
+        var result = DbcLoader.LoadText(text, DbcLoadOptions.Lenient);
+        Assert.IsTrue(result.Succeeded, string.Join(Environment.NewLine, result.Diagnostics.Select(x => $"{x.Code}: {x.Message}")));
+        var reloaded = result.GetDocumentOrThrow();
+        Assert.AreEqual("Calibration", reloaded.RelationAttributeDefaults["RelationText"].RawValue);
+        Assert.AreEqual("Production", reloaded.RelationAttributeDefaults["RelationMode"].RawValue);
+        CollectionAssert.AreEqual(
+            new[] { "Calibration", "Production" },
+            reloaded.RelationAttributes.Select(x => x.RawValue).ToArray());
+    }
+
+    [TestMethod]
+    public void WriteText_StringMetadataNumericTokenWithWhitespace_QuotesAndReloadsEquivalentRawValue()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [],
+            new Dictionary<string, DbcAttributeDefinition>
+            {
+                ["DisplayName"] = new("DisplayName", DbcAttributeOwnerKind.Network, DbcAttributeValueKind.String),
+            },
+            new Dictionary<string, DbcAttributeValue>
+            {
+                ["DisplayName"] = new("DisplayName", DbcAttributeValueKind.String, "1 ", "1 "),
+            },
+            relationAttributeDefinitions: new Dictionary<string, DbcRelationAttributeDefinition>
+            {
+                ["RelationText"] = new("RelationText", "BU_SG_REL_", DbcAttributeValueKind.String),
+            },
+            relationAttributeDefaults: new Dictionary<string, DbcRelationAttributeDefault>
+            {
+                ["RelationText"] = new("RelationText", "1 "),
+            });
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BA_ \"DisplayName\" \"1 \";");
+        StringAssert.Contains(text, "BA_DEF_DEF_REL_ \"RelationText\" \"1 \";");
+        Assert.IsFalse(text.Contains("BA_ \"DisplayName\" 1 ;", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("BA_DEF_DEF_REL_ \"RelationText\" 1 ;", StringComparison.Ordinal));
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.AreEqual("1 ", reloaded.Attributes["DisplayName"].RawValue);
+        Assert.AreEqual("1 ", reloaded.RelationAttributeDefaults["RelationText"].RawValue);
+    }
+
+    [TestMethod]
+    public void WriteText_AdditionalTransmitters_EmitsBoTxBuAndReloadsEquivalentTransmitters()
+    {
+        var primary = new DbcNode("Primary");
+        var backup = new DbcNode("Backup");
+        var host = new DbcNode("HOST");
+        var original = new DbcDocument(
+            [primary, backup, host],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(512),
+                    "RedundantStatus",
+                    8,
+                    primary,
+                    [new DbcSignal("Mode", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [host])],
+                    transmitters: [primary, backup]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "BO_TX_BU_ 512 : Backup;");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        CollectionAssert.AreEqual(
+            new[] { "Primary", "Backup" },
+            reloaded.ResolveMessage("RedundantStatus").Transmitters.Select(x => x.Name).ToArray());
+    }
+
+    [TestMethod]
+    public void WriteText_CommentsAndValueDescriptions_ReloadsEquivalentText()
+    {
+        var ecu = new DbcNode("CanonicalEcu", "node comment \\ \"quoted\"");
+        var tool = new DbcNode("CanonicalTool");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "CanonicalStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal(
+                            "CanonicalMode",
+                            0,
+                            8,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            3,
+                            "",
+                            [tool],
+                            valueDescriptions: new Dictionary<long, string>
+                            {
+                                [2] = "Drive \\ \"quoted\"",
+                                [0] = "Park",
+                                [1] = "Reverse",
+                            },
+                            comment: "signal comment \\ \"quoted\""),
+                    ],
+                    comment: "message comment \\ \"quoted\""),
+            ],
+            comment: "document comment \\ \"quoted\"");
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(original, options);
+
+        StringAssert.Contains(text, "CM_ \"document comment \\\\ \\\"quoted\\\"\";");
+        StringAssert.Contains(text, "CM_ BU_ CanonicalEcu \"node comment \\\\ \\\"quoted\\\"\";");
+        StringAssert.Contains(text, "CM_ BO_ 256 \"message comment \\\\ \\\"quoted\\\"\";");
+        StringAssert.Contains(text, "CM_ SG_ 256 CanonicalMode \"signal comment \\\\ \\\"quoted\\\"\";");
+        StringAssert.Contains(text, "VAL_ 256 CanonicalMode 0 \"Park\" 1 \"Reverse\" 2 \"Drive \\\\ \\\"quoted\\\"\";");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+
+        Assert.AreEqual("document comment \\ \"quoted\"", reloaded.Comment);
+        Assert.AreEqual("node comment \\ \"quoted\"", reloaded.ResolveNode("CanonicalEcu").Comment);
+        var message = reloaded.ResolveMessage("CanonicalStatus");
+        Assert.AreEqual("message comment \\ \"quoted\"", message.Comment);
+        var signal = message.ResolveSignal("CanonicalMode");
+        Assert.AreEqual("signal comment \\ \"quoted\"", signal.Comment);
+        Assert.AreEqual("Park", signal.ValueDescriptions[0]);
+        Assert.AreEqual("Reverse", signal.ValueDescriptions[1]);
+        Assert.AreEqual("Drive \\ \"quoted\"", signal.ValueDescriptions[2]);
+    }
+
+    [TestMethod]
+    public void WriteText_ReferencedOnlyNodeComments_ReloadsEquivalentComments()
+    {
+        var listedNode = new DbcNode("ListedNode");
+        var ecu = new DbcNode("ECU", "primary transmitter comment");
+        var tool = new DbcNode("Tool", "receiver comment");
+        var original = new DbcDocument(
+            [listedNode],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(257),
+                    "ReferencedOnlyStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool])]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "CM_ BU_ ECU \"primary transmitter comment\";");
+        StringAssert.Contains(text, "CM_ BU_ Tool \"receiver comment\";");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.AreEqual("primary transmitter comment", reloaded.ResolveNode("ECU").Comment);
+        Assert.AreEqual("receiver comment", reloaded.ResolveNode("Tool").Comment);
+    }
+
+    [TestMethod]
+    public void WriteText_FloatAndDoubleSignals_EmitSigValTypeAndReloadEquivalentTypes()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(300),
+                    "FloatStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Temperature", 0, 32, DbcByteOrder.Intel, DbcSignalValueType.Float, 1, 0, -40, 215, "degC", [ecu]),
+                        new DbcSignal("Energy", 32, 32, DbcByteOrder.Intel, DbcSignalValueType.Double, 1, 0, 0, 1000, "kWh", [ecu]),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "SIG_VALTYPE_ 300 Temperature : 1;");
+        StringAssert.Contains(text, "SIG_VALTYPE_ 300 Energy : 2;");
+        var message = DbcLoader.LoadTextDocumentOrThrow(text).ResolveMessage("FloatStatus");
+        Assert.AreEqual(DbcSignalValueType.Float, message.ResolveSignal("Temperature").ValueType);
+        Assert.AreEqual(DbcSignalValueType.Double, message.ResolveSignal("Energy").ValueType);
+    }
+
+    [TestMethod]
+    public void WriteText_ExtendedMultiplexing_EmitsSgMulValAndReloadsRanges()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(400),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(1, 3), new DbcMultiplexorRange(5, 7)])),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, "SG_MUL_VAL_ 400 Speed Mode 1-3, 5-7;");
+        var signal = DbcLoader.LoadTextDocumentOrThrow(text)
+            .ResolveMessage("MuxStatus")
+            .ResolveSignal("Speed");
+        Assert.AreEqual(DbcMultiplexingRole.Multiplexed, signal.Multiplexing.Role);
+        Assert.IsNull(signal.Multiplexing.SwitchValue);
+        Assert.AreEqual("Mode", signal.Multiplexing.MultiplexorSignalName);
+        CollectionAssert.AreEqual(
+            new[] { new DbcMultiplexorRange(1, 3), new DbcMultiplexorRange(5, 7) },
+            signal.Multiplexing.SwitchRanges.ToArray());
+    }
+
+    [TestMethod]
+    public void WriteText_ExtendedMultiplexingWithCanonicalPolicy_UsesMultiplexorExportName()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(402),
+                    "AliasMuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("ModeLong", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal("Mode", 4, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu]),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed("ModeLong", [new DbcMultiplexorRange(1, 3)])),
+                    ]),
+            ]);
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(original, options);
+
+        StringAssert.Contains(text, " SG_ ModeLong M : 0|4@1+ (1,0) [0|15] \"\" ECU");
+        StringAssert.Contains(text, " SG_ Mode : 4|4@1+ (1,0) [0|15] \"\" ECU");
+        StringAssert.Contains(text, "SG_MUL_VAL_ 402 Speed ModeLong 1-3;");
+        var signal = DbcLoader.LoadTextDocumentOrThrow(text)
+            .ResolveMessage("AliasMuxStatus")
+            .ResolveSignal("Speed");
+        Assert.AreEqual("ModeLong", signal.Multiplexing.MultiplexorSignalName);
+        CollectionAssert.AreEqual(
+            new[] { new DbcMultiplexorRange(1, 3) },
+            signal.Multiplexing.SwitchRanges.ToArray());
+    }
+
+    [TestMethod]
+    public void WriteText_BasicMultiplexingWithExtendedRanges_EmitsTokenAndSgMulVal()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(401),
+                    "MixedMuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed(2).WithExtendedRanges("Mode", [new DbcMultiplexorRange(4, 6)])),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+
+        StringAssert.Contains(text, " SG_ Speed m2 : 8|16@1+ (1,0) [0|250] \"km/h\" ECU");
+        StringAssert.Contains(text, "SG_MUL_VAL_ 401 Speed Mode 4-6;");
+        var signal = DbcLoader.LoadTextDocumentOrThrow(text)
+            .ResolveMessage("MixedMuxStatus")
+            .ResolveSignal("Speed");
+        Assert.AreEqual(2, signal.Multiplexing.SwitchValue);
+        Assert.AreEqual("Mode", signal.Multiplexing.MultiplexorSignalName);
+        CollectionAssert.AreEqual(
+            new[] { new DbcMultiplexorRange(4, 6) },
+            signal.Multiplexing.SwitchRanges.ToArray());
+    }
+
+    [TestMethod]
+    public void WriteText_LoadText_PreservesCoreMessageAndSignalSemantics()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.1, 0, 0, 250, "km/h", [tool]),
+                        new DbcSignal("Gear", 16, 8, DbcByteOrder.Intel, DbcSignalValueType.Signed, 1, -1, -1, 8, "", [tool]),
+                        new DbcSignal("Status", 24, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu, tool]),
+                    ]),
+            ]);
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(DbcWriter.WriteTextOrThrow(original));
+
+        Assert.AreEqual(2, reloaded.Nodes.Count);
+        var message = reloaded.ResolveMessage("VehicleStatus");
+        Assert.AreEqual(256u, message.RawId.Value);
+        Assert.AreEqual(8, message.DataLength);
+        Assert.AreEqual("ECU", message.PrimaryTransmitter.Name);
+
+        var speed = message.ResolveSignal("Speed");
+        Assert.AreEqual(0, speed.StartBit);
+        Assert.AreEqual(16, speed.BitLength);
+        Assert.AreEqual(DbcByteOrder.Intel, speed.ByteOrder);
+        Assert.AreEqual(DbcSignalValueType.Unsigned, speed.ValueType);
+        Assert.AreEqual(0.1, speed.Factor);
+        Assert.AreEqual("km/h", speed.Unit);
+
+        var gear = message.ResolveSignal("Gear");
+        Assert.AreEqual(DbcSignalValueType.Signed, gear.ValueType);
+        Assert.AreEqual(-1, gear.Offset);
+
+        var status = message.ResolveSignal("Status");
+        Assert.AreEqual(2, status.Receivers.Count);
+        Assert.AreEqual("ECU", status.Receivers[0].Name);
+        Assert.AreEqual("Tool", status.Receivers[1].Name);
+    }
+
+    [TestMethod]
+    public void WriteText_LoadText_PreservesRegularMultiplexingSemantics()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(512),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [tool], DbcMultiplexing.Multiplexor),
+                        new DbcSignal("Speed", 8, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.5, 1, 0, 250, "km/h", [tool], DbcMultiplexing.Multiplexed(1)),
+                    ]),
+            ]);
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(DbcWriter.WriteTextOrThrow(original));
+
+        var message = reloaded.ResolveMessage("MuxStatus");
+        var mode = message.ResolveSignal("Mode");
+        Assert.AreEqual(DbcMultiplexingRole.Multiplexor, mode.Multiplexing.Role);
+        Assert.IsNull(mode.Multiplexing.SwitchValue);
+        Assert.AreEqual(0, mode.StartBit);
+        Assert.AreEqual(4, mode.BitLength);
+
+        var speed = message.ResolveSignal("Speed");
+        Assert.AreEqual(DbcMultiplexingRole.Multiplexed, speed.Multiplexing.Role);
+        Assert.AreEqual(1, speed.Multiplexing.SwitchValue);
+        Assert.AreEqual(8, speed.StartBit);
+        Assert.AreEqual(16, speed.BitLength);
+        Assert.AreEqual(DbcByteOrder.Intel, speed.ByteOrder);
+        Assert.AreEqual(DbcSignalValueType.Unsigned, speed.ValueType);
+        Assert.AreEqual(0.5, speed.Factor);
+        Assert.AreEqual(1, speed.Offset);
+        Assert.AreEqual("km/h", speed.Unit);
+    }
+
+    [TestMethod]
+    public void WriteText_LoadText_PreservesMotorolaSignalBitRange()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(640),
+                    "MotorolaStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("MotoSigned12", 55, 12, DbcByteOrder.Motorola, DbcSignalValueType.Signed, 0.25, -5, -517, 506.75, "", [tool])]),
+            ]);
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(DbcWriter.WriteTextOrThrow(original));
+
+        var signal = reloaded.ResolveMessage("MotorolaStatus").ResolveSignal("MotoSigned12");
+        Assert.AreEqual(55, signal.StartBit);
+        Assert.AreEqual(12, signal.BitLength);
+        Assert.AreEqual(DbcByteOrder.Motorola, signal.ByteOrder);
+        Assert.AreEqual(DbcSignalValueType.Signed, signal.ValueType);
+        Assert.AreEqual(0.25, signal.Factor);
+        Assert.AreEqual(-5, signal.Offset);
+    }
+
+    [TestMethod]
+    public void WriteText_LoadText_PreservesEmptySignalReceivers()
+    {
+        var ecu = new DbcNode("ECU");
+        var original = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(768),
+                    "NoReceiverStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Spare", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [])]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+        StringAssert.Contains(text, " SG_ Spare : 0|8@1+ (1,0) [0|255] \"\" Vector__XXX");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+
+        Assert.AreEqual(1, reloaded.Nodes.Count);
+        Assert.IsFalse(reloaded.TryResolveNode("Vector__XXX", out _));
+        var signal = reloaded.ResolveMessage("NoReceiverStatus").ResolveSignal("Spare");
+        Assert.AreEqual(0, signal.Receivers.Count);
+    }
+
+    [TestMethod]
+    public void WriteText_LoadText_PreservesEscapedSignalUnit()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        const string unit = "V\\rms\"quoted\"";
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(1024),
+                    "EscapedUnitStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Voltage", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.01, 0, 0, 100, unit, [tool])]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(original);
+        StringAssert.Contains(text, "\"V\\\\rms\\\"quoted\\\"\"");
+
+        var signal = DbcLoader.LoadTextDocumentOrThrow(text)
+            .ResolveMessage("EscapedUnitStatus")
+            .ResolveSignal("Voltage");
+
+        Assert.AreEqual(unit, signal.Unit);
+    }
+}

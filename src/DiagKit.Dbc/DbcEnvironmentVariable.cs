@@ -109,7 +109,8 @@ public sealed class DbcEnvironmentVariable
     public int SourceLine { get; }
 
     /// <summary>
-    /// 环境变量级属性 / Environment-variable-level attributes.
+    /// 环境变量级属性；普通 BA_ ... EV_ 赋值是本库 reload metadata，当前不属于 CANdb++ known-good 导出集合。<br/>
+    /// Environment-variable-level attributes; general BA_ ... EV_ assignments are library reload metadata and are not currently part of the CANdb++ known-good export set.
     /// </summary>
     public IReadOnlyDictionary<string, DbcAttributeValue> Attributes { get; }
 }

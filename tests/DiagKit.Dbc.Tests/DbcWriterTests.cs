@@ -1,0 +1,722 @@
+namespace DiagKit.Dbc.Tests;
+
+[TestClass]
+public sealed class DbcWriterTests
+{
+    [TestMethod]
+    public void WriteText_EmptyDocument_ReturnsHeaderAndNoErrors()
+    {
+        var document = new DbcDocument([], []);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsTrue(result.Succeeded);
+        Assert.AreEqual(0, result.Errors.Count);
+        StringAssert.Contains(result.GetTextOrThrow(), "VERSION \"\"");
+        StringAssert.Contains(result.GetTextOrThrow(), "NS_ :");
+        StringAssert.Contains(result.GetTextOrThrow(), "    BU_SG_REL_");
+        StringAssert.Contains(result.GetTextOrThrow(), "    BU_EV_REL_");
+        StringAssert.Contains(result.GetTextOrThrow(), "    BU_BO_REL_");
+        StringAssert.Contains(result.GetTextOrThrow(), "BS_:");
+        StringAssert.Contains(result.GetTextOrThrow(), "BU_:");
+    }
+
+    [TestMethod]
+    public void WriteTextOrThrow_ThrowsWhenValidationHasError()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(0x100),
+                    "Bad Message",
+                    8,
+                    ecu,
+                    [])
+            ]);
+
+        var exception = Assert.ThrowsExactly<DbcException>(() => DbcWriter.WriteTextOrThrow(document));
+
+        StringAssert.Contains(exception.Message, "DBC_WRITE_INVALID_IDENTIFIER");
+    }
+
+    [TestMethod]
+    public void WriteText_DuplicateNodeSourceNames_ReturnsNameCollisionError()
+    {
+        var document = new DbcDocument(
+            [
+                new DbcNode("FirstNode", sourceName: "ECU"),
+                new DbcNode("SecondNode", sourceName: "ECU"),
+            ],
+            []);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_NAME_COLLISION"));
+    }
+
+    [TestMethod]
+    public void WriteText_UseCanonicalNamesWhenValid_EmitsCanonicalNodeName()
+    {
+        var document = new DbcDocument(
+            [new DbcNode("CanonicalNode")],
+            []);
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        StringAssert.Contains(text, "BU_: CanonicalNode");
+    }
+
+    [TestMethod]
+    public void WriteText_LenientDuplicateExportName_ReturnsNameCollisionError()
+    {
+        var document = new DbcDocument(
+            [
+                new DbcNode("FirstNode", sourceName: "ECU"),
+                new DbcNode("SecondNode", sourceName: "ECU"),
+            ],
+            []);
+        var options = new DbcWriterOptions
+        {
+            Mode = DbcWriteMode.Lenient,
+        };
+
+        var result = DbcWriter.WriteText(document, options);
+
+        Assert.IsFalse(result.Succeeded);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_NAME_COLLISION");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
+    public void WriteText_PayloadGreaterThan64_ReturnsRuntimeUnsupportedWarningAndText()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(0x100),
+                    "LargePayload",
+                    65,
+                    ecu,
+                    [])
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsTrue(result.Succeeded);
+        Assert.AreEqual(0, result.Errors.Count);
+        var diagnostic = result.Warnings.Single(x => x.Code == "DBC_WRITE_RUNTIME_UNSUPPORTED_MESSAGE");
+        Assert.AreEqual(DbcDiagnosticSeverity.Warning, diagnostic.Severity);
+        StringAssert.Contains(result.GetTextOrThrow(), "BU_: ECU");
+    }
+
+    [TestMethod]
+    public void WriteText_MessageAndSignals_EmitsNormalizedBoAndSgLines()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        var document = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.1, 0, 0, 250, "km/h", [tool]),
+                        new DbcSignal("Gear", 16, 8, DbcByteOrder.Intel, DbcSignalValueType.Signed, 1, -1, -1, 8, "", [tool]),
+                        new DbcSignal("Status", 24, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu, tool]),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, "BU_: ECU Tool");
+        StringAssert.Contains(text, "BO_ 256 VehicleStatus: 8 ECU");
+        StringAssert.Contains(text, " SG_ Speed : 0|16@1+ (0.10000000000000001,0) [0|250] \"km/h\" Tool");
+        StringAssert.Contains(text, " SG_ Gear : 16|8@1- (1,-1) [-1|8] \"\" Tool");
+        StringAssert.Contains(text, " SG_ Status : 24|8@1+ (1,0) [0|15] \"\" ECU,Tool");
+    }
+
+    [TestMethod]
+    public void WriteText_FloatAndDoubleSignals_EmitsSigValTypeLines()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Temperature", 0, 32, DbcByteOrder.Intel, DbcSignalValueType.Float, 1, 0, 0, 100, "degC", [ecu]),
+                        new DbcSignal("Energy", 32, 32, DbcByteOrder.Intel, DbcSignalValueType.Double, 1, 0, 0, 100, "kWh", [ecu]),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, "SIG_VALTYPE_ 256 Temperature : 1;");
+        StringAssert.Contains(text, "SIG_VALTYPE_ 256 Energy : 2;");
+    }
+
+    [TestMethod]
+    public void WriteText_NonFiniteSignalNumbers_ReturnsNonFiniteNumberError()
+    {
+        (string SignalName, double Factor, double Offset, double Minimum, double Maximum)[] cases =
+        {
+            ("BadFactor", double.NaN, 0, 0, 100),
+            ("BadOffset", 1, double.PositiveInfinity, 0, 100),
+            ("BadMinimum", 1, 0, double.NegativeInfinity, 100),
+            ("BadMaximum", 1, 0, 0, double.NaN),
+        };
+
+        foreach (var (signalName, factor, offset, minimum, maximum) in cases)
+        {
+            var ecu = new DbcNode("ECU");
+            var document = new DbcDocument(
+                [ecu],
+                [
+                    new DbcMessage(
+                        new DbcRawMessageId(256),
+                        "VehicleStatus",
+                        8,
+                        ecu,
+                        [new DbcSignal(signalName, 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, factor, offset, minimum, maximum, "", [ecu])]),
+                ]);
+
+            var result = DbcWriter.WriteText(document);
+
+            Assert.IsFalse(result.Succeeded, signalName);
+            Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_NON_FINITE_SIGNAL_NUMBER"), signalName);
+        }
+    }
+
+    [TestMethod]
+    public void WriteText_ReceiverExportNameUsesVectorSentinel_ReturnsReservedReceiverNameError()
+    {
+        var ecu = new DbcNode("ECU");
+        var reservedReceiver = new DbcNode("ReservedReceiver", sourceName: "Vector__XXX");
+        var document = new DbcDocument(
+            [ecu, reservedReceiver],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [reservedReceiver])]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_RESERVED_RECEIVER_NAME");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
+    public void WriteText_DefaultPolicyWithLongSymbolExport_EmitsLongSymbolAttributesAndReloadsAliases()
+    {
+        var ecu = new DbcNode("VeryLongEngineControllerName", sourceName: "ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(512),
+                    "VeryLongVehicleStatusMessageName",
+                    8,
+                    ecu,
+                    [],
+                    sourceName: "VehicleStatusShort"),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, "BU_: ECU");
+        StringAssert.Contains(text, "BO_ 512 VehicleStatusShort: 8 ECU");
+        StringAssert.Contains(text, "BA_DEF_ BU_ \"SystemNodeLongSymbol\" STRING;");
+        StringAssert.Contains(text, "BA_DEF_ BO_ \"SystemMessageLongSymbol\" STRING;");
+        StringAssert.Contains(text, "BA_ \"SystemNodeLongSymbol\" BU_ ECU \"VeryLongEngineControllerName\";");
+        StringAssert.Contains(text, "BA_ \"SystemMessageLongSymbol\" BO_ 512 \"VeryLongVehicleStatusMessageName\";");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("VeryLongEngineControllerName", out _));
+        Assert.IsTrue(reloaded.TryResolveNode("ECU", out _));
+        Assert.IsTrue(reloaded.TryResolveMessage("VeryLongVehicleStatusMessageName", out _));
+        Assert.IsTrue(reloaded.TryResolveMessage("VehicleStatusShort", out _));
+    }
+
+    [TestMethod]
+    public void WriteText_SignalSourceNameDiffersFromCanonicalName_EmitsLongSymbolAttributeAndReloadsAliases()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(768),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("VeryLongVehicleSpeedSignalName", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [ecu], sourceName: "VehSpdShort")]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, " SG_ VehSpdShort : 0|16@1+ (1,0) [0|250] \"km/h\" ECU");
+        StringAssert.Contains(text, "BA_DEF_ SG_ \"SystemSignalLongSymbol\" STRING;");
+        StringAssert.Contains(text, "BA_ \"SystemSignalLongSymbol\" SG_ 768 VehSpdShort \"VeryLongVehicleSpeedSignalName\";");
+
+        var message = DbcLoader.LoadTextDocumentOrThrow(text).ResolveMessage("VehicleStatus");
+        Assert.IsTrue(message.TryResolveSignal("VeryLongVehicleSpeedSignalName", out _));
+        Assert.IsTrue(message.TryResolveSignal("VehSpdShort", out _));
+    }
+
+    [TestMethod]
+    public void WriteText_ReferencedOnlyNodeSourceNameDiffersFromCanonicalName_EmitsLongSymbolAttribute()
+    {
+        var ecu = new DbcNode("ECU");
+        var receiver = new DbcNode("VeryLongDiagnosticsToolNodeName", sourceName: "Tool");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(769),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Mode", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [receiver])]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, " SG_ Mode : 0|8@1+ (1,0) [0|15] \"\" Tool");
+        StringAssert.Contains(text, "BA_ \"SystemNodeLongSymbol\" BU_ Tool \"VeryLongDiagnosticsToolNodeName\";");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("VeryLongDiagnosticsToolNodeName", out _));
+        Assert.IsTrue(reloaded.TryResolveNode("Tool", out _));
+    }
+
+    [TestMethod]
+    public void WriteText_UseCanonicalNamesWhenValid_DoesNotEmitLongSymbolWhenCanonicalNameIsExported()
+    {
+        var ecu = new DbcNode("CanonicalEcu");
+        var tool = new DbcNode("CanonicalTool");
+        var variable = new DbcEnvironmentVariable(
+            "CanonicalEnv",
+            0,
+            0,
+            1,
+            "",
+            0,
+            1,
+            "DUMMY_NODE_VECTOR0");
+        var document = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(770),
+                    "CanonicalStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool])]),
+            ],
+            environmentVariables: new Dictionary<string, DbcEnvironmentVariable>
+            {
+                [variable.Name] = variable,
+            });
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        StringAssert.Contains(text, "BU_: CanonicalEcu CanonicalTool");
+        StringAssert.Contains(text, "BO_ 770 CanonicalStatus: 8 CanonicalEcu");
+        StringAssert.Contains(text, " SG_ CanonicalSpeed : 0|16@1+ (1,0) [0|250] \"km/h\" CanonicalTool");
+        StringAssert.Contains(text, "EV_ CanonicalEnv : 0 [0|1] \"\" 0 1 DUMMY_NODE_VECTOR0;");
+        Assert.IsFalse(text.Contains("SystemNodeLongSymbol", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("SystemMessageLongSymbol", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("SystemSignalLongSymbol", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("SystemEnvVarLongSymbol", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void WriteText_UseCanonicalNamesWhenValidWithInvalidCanonicalNameFallback_EmitsLongSymbol()
+    {
+        var ecu = new DbcNode("Invalid Node Name", sourceName: "ECU");
+        var document = new DbcDocument([ecu], []);
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        StringAssert.Contains(text, "BU_: ECU");
+        StringAssert.Contains(text, "BA_ \"SystemNodeLongSymbol\" BU_ ECU \"Invalid Node Name\";");
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("Invalid Node Name", out _));
+        Assert.IsTrue(reloaded.TryResolveNode("ECU", out _));
+    }
+
+    [TestMethod]
+    public void WriteText_ReferencedOnlyNodesWithSameExportNameAndDifferentCanonicalNames_ReturnsNameCollisionError()
+    {
+        var ecu = new DbcNode("ECU");
+        var receiver = new DbcNode("CanonicalReceiverNode", sourceName: "Tool");
+        var additionalTransmitter = new DbcNode("CanonicalAdditionalTransmitterNode", sourceName: "Tool");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(771),
+                    "VehicleStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("Mode", 0, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [receiver])],
+                    transmitters: [ecu, additionalTransmitter]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_NAME_COLLISION"));
+    }
+
+    [TestMethod]
+    public void WriteText_ReferencedNodesWithSameExportNameAndDifferentComments_ReturnsNameCollisionError()
+    {
+        var primary = new DbcNode("ECU", "primary comment");
+        var receiver = new DbcNode("ECU", "receiver comment");
+        var document = new DbcDocument(
+            [],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "CollisionStatus",
+                    8,
+                    primary,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [receiver])]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_NAME_COLLISION");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
+    public void WriteText_TransmittersWithoutPrimary_ReturnsUnsupportedAdditionalTransmittersError()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        var mismatchedTransmitterDocument = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(512),
+                    "ToolStatus",
+                    8,
+                    ecu,
+                    [],
+                    transmitters: [tool]),
+            ]);
+
+        var result = DbcWriter.WriteText(mismatchedTransmitterDocument);
+
+        Assert.IsFalse(result.Succeeded);
+        Assert.IsNull(result.Text);
+        var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_ADDITIONAL_TRANSMITTERS");
+        Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [TestMethod]
+    public void WriteText_MetadataWithoutRepresentingAttributes_ReturnsUnsupportedMetadataError()
+    {
+        var ecu = new DbcNode("ECU");
+        var metadataCases = new[]
+        {
+            new DbcDocument(
+                [ecu],
+                [
+                    new DbcMessage(
+                        new DbcRawMessageId(256),
+                        "CyclicStatus",
+                        8,
+                        ecu,
+                        [],
+                        cycleTimeMs: 10),
+                ]),
+            new DbcDocument(
+                [ecu],
+                [
+                    new DbcMessage(
+                        new DbcRawMessageId(512),
+                        "InitialValueStatus",
+                        8,
+                        ecu,
+                        [
+                            new DbcSignal(
+                                "Mode",
+                                0,
+                                8,
+                                DbcByteOrder.Intel,
+                                DbcSignalValueType.Unsigned,
+                                1,
+                                0,
+                                0,
+                                3,
+                                "",
+                                [ecu],
+                                initialValue: 1),
+                        ]),
+                ]),
+        };
+
+        foreach (var document in metadataCases)
+        {
+            var result = DbcWriter.WriteText(document);
+
+            Assert.IsFalse(result.Succeeded);
+            Assert.IsNull(result.Text);
+            var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_METADATA");
+            Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity);
+        }
+    }
+
+    [TestMethod]
+    public void WriteText_MalformedMultiplexedSignal_ReturnsUnsupportedMultiplexingError()
+    {
+        (string CaseName, DbcMultiplexing Multiplexing)[] cases =
+        {
+            ("MissingSwitchValue", new DbcMultiplexing(DbcMultiplexingRole.Multiplexed, null)),
+            ("NegativeSwitchValue", DbcMultiplexing.Multiplexed(-1)),
+            ("NoneWithSwitchValue", new DbcMultiplexing(DbcMultiplexingRole.None, 1)),
+            ("MultiplexorWithSwitchValue", new DbcMultiplexing(DbcMultiplexingRole.Multiplexor, 1)),
+            ("ExtendedRangesMissingMultiplexorName", new DbcMultiplexing(DbcMultiplexingRole.Multiplexed, null, null, [new DbcMultiplexorRange(1, 3)])),
+            ("ExtendedRangesMissingMultiplexorSignal", DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(1, 3)])),
+            ("BasicMultiplexingWithMuxNameButNoRanges", new DbcMultiplexing(DbcMultiplexingRole.Multiplexed, 1, "Mode", [])),
+        };
+
+        foreach (var (caseName, multiplexing) in cases)
+        {
+            var ecu = new DbcNode("ECU");
+            var document = new DbcDocument(
+                [ecu],
+                [
+                    new DbcMessage(
+                        new DbcRawMessageId(256),
+                        "MuxStatus",
+                        8,
+                        ecu,
+                        [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [ecu], multiplexing)]),
+                ]);
+
+            var result = DbcWriter.WriteText(document);
+
+            Assert.IsFalse(result.Succeeded, caseName);
+            Assert.IsNull(result.Text, caseName);
+            var diagnostic = result.Errors.Single(x => x.Code == "DBC_WRITE_UNSUPPORTED_MULTIPLEXING");
+            Assert.AreEqual(DbcDiagnosticSeverity.Error, diagnostic.Severity, caseName);
+        }
+    }
+
+    [TestMethod]
+    public void WriteText_InvalidSignalBitRanges_ReturnsInvalidSignalBitRangeError()
+    {
+        (string SignalName, int DataLength, int StartBit, int BitLength, DbcByteOrder ByteOrder)[] cases =
+        {
+            ("NegativeStart", 8, -1, 8, DbcByteOrder.Intel),
+            ("ZeroLength", 8, 0, 0, DbcByteOrder.Intel),
+            ("ExceedsMessagePayload", 8, 64, 1, DbcByteOrder.Intel),
+            ("SignalTooWide", 8, 0, 65, DbcByteOrder.Intel),
+            ("MotorolaExceedsMessagePayload", 1, 3, 12, DbcByteOrder.Motorola),
+        };
+
+        foreach (var (signalName, dataLength, startBit, bitLength, byteOrder) in cases)
+        {
+            var ecu = new DbcNode("ECU");
+            var document = new DbcDocument(
+                [ecu],
+                [
+                    new DbcMessage(
+                        new DbcRawMessageId(256),
+                        "VehicleStatus",
+                        dataLength,
+                        ecu,
+                        [new DbcSignal(signalName, startBit, bitLength, byteOrder, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "", [ecu])]),
+                ]);
+
+            var result = DbcWriter.WriteText(document);
+
+            Assert.IsFalse(result.Succeeded, signalName);
+            Assert.IsNull(result.Text, signalName);
+            Assert.IsTrue(result.Errors.Any(x => x.Code == "DBC_WRITE_INVALID_SIGNAL_BIT_RANGE"), signalName);
+        }
+    }
+
+    [TestMethod]
+    public void WriteText_MetadataOnlyLargePayloadSignalWithinMessageRange_SucceedsWithRuntimeWarning()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(1280),
+                    "LargePayload",
+                    100,
+                    ecu,
+                    [new DbcSignal("DiagnosticBlock", 512, 8, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 255, "", [ecu])]),
+            ]);
+
+        var result = DbcWriter.WriteText(document);
+
+        Assert.IsTrue(result.Succeeded);
+        Assert.AreEqual(0, result.Errors.Count);
+        Assert.IsTrue(result.Warnings.Any(x => x.Code == "DBC_WRITE_RUNTIME_UNSUPPORTED_MESSAGE"));
+        var text = result.GetTextOrThrow();
+        StringAssert.Contains(text, "BO_ 1280 LargePayload: 100 ECU");
+        StringAssert.Contains(text, " SG_ DiagnosticBlock : 512|8@1+ (1,0) [0|255] \"\" ECU");
+    }
+
+    [TestMethod]
+    public void WriteText_UseCanonicalNamesWhenValid_EmitsCanonicalMessageSignalAndNodeReferences()
+    {
+        var ecu = new DbcNode("CanonicalEcu");
+        var tool = new DbcNode("CanonicalTool");
+        var document = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "CanonicalStatus",
+                    8,
+                    ecu,
+                    [new DbcSignal("CanonicalSpeed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [tool])]),
+            ]);
+        var options = new DbcWriterOptions
+        {
+            NameExportPolicy = DbcNameExportPolicy.UseCanonicalNamesWhenValid,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        StringAssert.Contains(text, "BU_: CanonicalEcu CanonicalTool");
+        StringAssert.Contains(text, "BO_ 256 CanonicalStatus: 8 CanonicalEcu");
+        StringAssert.Contains(text, " SG_ CanonicalSpeed : 0|16@1+ (1,0) [0|250] \"km/h\" CanonicalTool");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(text);
+        Assert.IsTrue(reloaded.TryResolveNode("CanonicalEcu", out _));
+        var message = reloaded.ResolveMessage("CanonicalStatus");
+        Assert.AreEqual("CanonicalStatus", message.Name);
+        Assert.AreEqual("CanonicalSpeed", message.ResolveSignal("CanonicalSpeed").Name);
+    }
+
+    [TestMethod]
+    public void WriteText_StableSortMode_OrdersMessagesByRawIdThenExportName()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(new DbcRawMessageId(300), "AHighId", 8, ecu, []),
+                new DbcMessage(new DbcRawMessageId(100), "ZLowId", 8, ecu, []),
+                new DbcMessage(new DbcRawMessageId(200), "MMidId", 8, ecu, []),
+            ]);
+        var options = new DbcWriterOptions
+        {
+            SortMode = DbcWriterSortMode.Stable,
+        };
+
+        var text = DbcWriter.WriteTextOrThrow(document, options);
+
+        Assert.IsTrue(
+            text.IndexOf("BO_ 100 ZLowId: 8 ECU", StringComparison.Ordinal) <
+            text.IndexOf("BO_ 200 MMidId: 8 ECU", StringComparison.Ordinal));
+        Assert.IsTrue(
+            text.IndexOf("BO_ 200 MMidId: 8 ECU", StringComparison.Ordinal) <
+            text.IndexOf("BO_ 300 AHighId: 8 ECU", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void WriteText_ExtendedMultiplexing_EmitsSgMulValLine()
+    {
+        var ecu = new DbcNode("ECU");
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal(
+                            "Speed",
+                            8,
+                            16,
+                            DbcByteOrder.Intel,
+                            DbcSignalValueType.Unsigned,
+                            1,
+                            0,
+                            0,
+                            250,
+                            "km/h",
+                            [ecu],
+                            DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(1, 3)])),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, " SG_ Mode M : 0|4@1+ (1,0) [0|15] \"\" ECU");
+        StringAssert.Contains(text, " SG_ Speed : 8|16@1+ (1,0) [0|250] \"km/h\" ECU");
+        StringAssert.Contains(text, "SG_MUL_VAL_ 256 Speed Mode 1-3;");
+    }
+
+    [TestMethod]
+    public void WriteText_MultiplexedSignalWithExtendedRanges_EmitsTokenAndSgMulValLine()
+    {
+        var ecu = new DbcNode("ECU");
+        var multiplexing = DbcMultiplexing.Multiplexed(1)
+            .WithExtendedRanges("Mode", [new DbcMultiplexorRange(1, 3)]);
+        var document = new DbcDocument(
+            [ecu],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "MuxStatus",
+                    8,
+                    ecu,
+                    [
+                        new DbcSignal("Mode", 0, 4, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 15, "", [ecu], DbcMultiplexing.Multiplexor),
+                        new DbcSignal("Speed", 8, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 1, 0, 0, 250, "km/h", [ecu], multiplexing),
+                    ]),
+            ]);
+
+        var text = DbcWriter.WriteTextOrThrow(document);
+
+        StringAssert.Contains(text, " SG_ Speed m1 : 8|16@1+ (1,0) [0|250] \"km/h\" ECU");
+        StringAssert.Contains(text, "SG_MUL_VAL_ 256 Speed Mode 1-3;");
+    }
+}

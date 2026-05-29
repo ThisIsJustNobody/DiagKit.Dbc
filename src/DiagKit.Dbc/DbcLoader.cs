@@ -107,6 +107,8 @@ public static partial class DbcLoader
 
     private sealed class Parser
     {
+        private const string EmptyReceiverSentinel = "Vector__XXX";
+
         private readonly DbcLoadOptions options;
         private readonly List<DbcDiagnostic> diagnostics = [];
         private readonly Dictionary<string, NodeBuilder> nodes = new(StringComparer.Ordinal);
@@ -441,7 +443,9 @@ public static partial class DbcLoader
             }
 
             var receivers = match.Groups["rx"].Value
-                .Split([',', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                .Split([',', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries)
+                .Where(static receiver => !string.Equals(receiver, EmptyReceiverSentinel, StringComparison.Ordinal))
+                .ToArray();
 
             foreach (var receiver in receivers)
             {

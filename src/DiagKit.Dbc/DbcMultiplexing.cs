@@ -149,6 +149,19 @@ public readonly record struct DbcMultiplexing
         }
 
         var ordered = ranges.ToArray();
+        for (var i = 0; i < ordered.Length; i++)
+        {
+            if (ordered[i].Minimum < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(ranges), "Multiplexor range minimum cannot be negative.");
+            }
+
+            if (ordered[i].Maximum < ordered[i].Minimum)
+            {
+                throw new ArgumentOutOfRangeException(nameof(ranges), "Multiplexor range maximum cannot be less than minimum.");
+            }
+        }
+
         Array.Sort(ordered, static (left, right) =>
         {
             var minimum = left.Minimum.CompareTo(right.Minimum);

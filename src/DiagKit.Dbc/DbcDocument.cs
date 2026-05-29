@@ -112,8 +112,8 @@ public sealed class DbcDocument
     public IReadOnlyDictionary<string, DbcRelationAttributeDefault> RelationAttributeDefaults { get; }
 
     /// <summary>
-    /// 关系属性赋值 (BA_REL_) 的原始元数据。<br/>
-    /// Raw metadata for relation attribute assignments (BA_REL_).
+    /// 关系属性赋值 (BA_REL_) 的原始元数据；这是本库 reload metadata，当前不属于 CANdb++ known-good 导出集合。<br/>
+    /// Raw metadata for relation attribute assignments (BA_REL_); this is library reload metadata and is not currently part of the CANdb++ known-good export set.
     /// </summary>
     public IReadOnlyList<DbcRelationAttributeValue> RelationAttributes { get; }
 

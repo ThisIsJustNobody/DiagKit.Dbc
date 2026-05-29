@@ -17,6 +17,8 @@
 - 可通过 `DbcSimpleRuntime` / `DbcSimpleChannel` 批量枚举 `DbcSignalViewSnapshot`，方便 UI 绑定。
 - 建模 Node、Message、Signal、环境变量、关系属性元数据、属性、值表、复用信号、CAN identifier、CAN FD flags 和来源行号。
 - 兼容 Vector `SystemNodeLongSymbol`、`SystemMessageLongSymbol`、`SystemSignalLongSymbol` 和 `SystemEnvVarLongSymbol`，默认展示完整名称，同时保留短名别名查找。
+- 使用 `DbcWriter` 导出稳定、可重新加载的规范化 DBC 文本，包含写出 diagnostics、Vector long-symbol 导出和 reload 语义等价覆盖。
+- 使用 `DbcDocumentBuilder` 新建或语义编辑文档，再交给 writer 导出。
 - 编解码 Intel/Motorola 信号、 signed 值、浮点信号、raw 值和 physical 值。
 - 使用显式写入策略处理范围问题，避免静默修正关键语义。
 - 将接收帧处理为当前状态 snapshot 和流式 `SignalSample`，供实时波形、历史回放和分析层消费。
@@ -40,6 +42,28 @@
 | 首次接入、UI、脚本、测试台 | `DbcSimpleRuntime` | 加载 DBC、保留 diagnostics，并提供 `"Message.Signal"` 便捷 API。 |
 | 生产运行时状态机 | `DbcRuntimeSession` / `DbcChannelRuntime` | 使用预解析 handle、snapshot、sink 和周期轮询。 |
 | 底层工具和元数据处理 | `DbcLoader.LoadDocumentOrThrow`、`DbcDocument`、`DbcCodec` | 直接查看 DBC 元数据，或做无状态 encode/decode。 |
+
+## 规范化 DBC 导出
+
+`DbcWriter` 从不可变 `DbcDocument` 写出稳定、可重新加载的 DBC 文本，适用于新建、语义编辑后生成和 CI 规范化导出。它承诺 reload 语义等价，不是逐字节 round-trip 编辑；不保留原文件空白、语句顺序、未知语句或注释位置。
+
+默认 writer profile 是 `ReloadEquivalent`，会优先保留本库可重新加载的元数据，但可能输出当前尚未列入 CANdb++ known-good 的普通 `BA_ ... EV_ ...` 环境变量属性和 `BA_REL_` 关系属性赋值。面向 CANdb++ 导出时使用 `DbcWriterCompatibilityProfile.CanDbPlusKnownGood`；严格模式会失败关闭，宽松模式会省略这些语句并返回 warning。
+
+```csharp
+var document = DbcLoader.LoadTextDocumentOrThrow(dbcText);
+var result = DbcWriter.WriteText(document);
+var text = result.GetTextOrThrow();
+```
+
+需要新建或编辑文档时，可以先使用 `DbcDocumentBuilder`：
+
+```csharp
+var builder = DbcDocumentBuilder.Create();
+builder.AddNode("ECU");
+builder.AddMessage(new DbcRawMessageId(256), "Status", 8, "ECU")
+    .AddSignal("Speed", 0, 16)
+    .WithScaling(0.1, 0);
+```
 
 ## 5 分钟黄金路径
 

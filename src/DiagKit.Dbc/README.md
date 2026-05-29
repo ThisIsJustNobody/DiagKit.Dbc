@@ -17,6 +17,8 @@
 - Enumerate `DbcSignalViewSnapshot` values for UI binding through `DbcSimpleRuntime` / `DbcSimpleChannel`.
 - Model nodes, messages, signals, environment variables, relation-attribute metadata, attributes, value tables, multiplexing, CAN identifiers, CAN FD flags, and source lines.
 - Restore Vector `SystemNodeLongSymbol`, `SystemMessageLongSymbol`, `SystemSignalLongSymbol`, and `SystemEnvVarLongSymbol` as canonical names while keeping short-name aliases resolvable.
+- Export normalized, reloadable DBC text with `DbcWriter`, write diagnostics, Vector long-symbol output, and reload semantic equivalence coverage.
+- Create or semantically edit documents with `DbcDocumentBuilder` before export.
 - Encode and decode Intel/Motorola signals, signed values, floating-point signals, raw values, and physical values.
 - Use explicit write policies for range handling instead of silent correction.
 - Process received frames into current snapshots and streaming `SignalSample` output for real-time or historical data consumers.
@@ -40,6 +42,28 @@ For a fuller integration guide, see [API usage guide](https://github.com/ThisIsJ
 | First use, UI, scripts, tests | `DbcSimpleRuntime` | Loads a DBC, keeps diagnostics, and exposes `"Message.Signal"` convenience APIs. |
 | Production runtime state machine | `DbcRuntimeSession` / `DbcChannelRuntime` | Use pre-resolved handles, snapshots, sinks, and periodic polling. |
 | Low-level tools and metadata | `DbcLoader.LoadDocumentOrThrow`, `DbcDocument`, `DbcCodec` | Inspect DBC metadata or run stateless encode/decode without a runtime session. |
+
+## Normalized DBC Export
+
+`DbcWriter` writes stable DBC text from immutable `DbcDocument` metadata for newly built documents, semantic edits, and CI normalized export. The contract is reload semantic equivalence, not byte-for-byte round-trip editing: original whitespace, statement order, unknown statements, and comment placement are not preserved.
+
+The default writer profile is `ReloadEquivalent`, which may emit metadata preserved by this library but not currently known-good in CANdb++, including general `BA_ ... EV_ ...` environment-variable attributes and `BA_REL_` relation assignments. Use `DbcWriterCompatibilityProfile.CanDbPlusKnownGood` for CANdb++-oriented export; strict mode fails on known-unsupported statements, while lenient mode omits them and reports warnings.
+
+```csharp
+var document = DbcLoader.LoadTextDocumentOrThrow(dbcText);
+var result = DbcWriter.WriteText(document);
+var text = result.GetTextOrThrow();
+```
+
+`DbcDocumentBuilder` can create or edit documents before export:
+
+```csharp
+var builder = DbcDocumentBuilder.Create();
+builder.AddNode("ECU");
+builder.AddMessage(new DbcRawMessageId(256), "Status", 8, "ECU")
+    .AddSignal("Speed", 0, 16)
+    .WithScaling(0.1, 0);
+```
 
 ## 5-Minute Path
 

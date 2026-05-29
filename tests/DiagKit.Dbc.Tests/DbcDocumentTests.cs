@@ -196,6 +196,25 @@ public sealed class DbcDocumentTests
     }
 
     [TestMethod]
+    public void Multiplexing_NegativeRange_Throws()
+    {
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+            () => DbcMultiplexing.Multiplexed("Mode", [new DbcMultiplexorRange(-1, 3)]));
+    }
+
+    [TestMethod]
+    public void Multiplexing_InvertedRangeBeforeMerge_Throws()
+    {
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+            () => DbcMultiplexing.Multiplexed(
+                "Mode",
+                [
+                    new DbcMultiplexorRange(1, 3),
+                    new DbcMultiplexorRange(4, 2),
+                ]));
+    }
+
+    [TestMethod]
     public void SignalMessageBackReferenceIsAttachedOnlyOnceByMessageConstruction()
     {
         var ecu = new DbcNode("ECU");
