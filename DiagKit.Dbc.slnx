@@ -1,9 +1,13 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/DiagKit.Dbc/DiagKit.Dbc.csproj" />
+    <Project Path="src/DiagKit.Dbc.Tool/DiagKit.Dbc.Tool.csproj" />
+    <Project Path="src/DiagKit.Dbc.Workbook/DiagKit.Dbc.Workbook.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DiagKit.Dbc.Benchmarks/DiagKit.Dbc.Benchmarks.csproj" />
     <Project Path="tests/DiagKit.Dbc.Tests/DiagKit.Dbc.Tests.csproj" />
+    <Project Path="tests/DiagKit.Dbc.Tool.Tests/DiagKit.Dbc.Tool.Tests.csproj" />
+    <Project Path="tests/DiagKit.Dbc.Workbook.Tests/DiagKit.Dbc.Workbook.Tests.csproj" />
   </Folder>
 </Solution>

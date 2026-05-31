@@ -29,7 +29,9 @@
 
 ## Scope
 
-The package is intentionally hardware-agnostic. It does not depend on CanHub, Vector, ZLG, WPF, CSV workflows, or any hardware SDK. Host applications adapt hardware frames to `DbcFrameView` and consume transmit frames through `IDbcFrameSink`.
+The package is intentionally hardware-agnostic. It does not depend on CanHub, Vector, ZLG, WPF, Excel/CSV workflows, or any hardware SDK. Host applications adapt hardware frames to `DbcFrameView` and consume transmit frames through `IDbcFrameSink`.
+
+For Excel-based bulk editing of common DBC parameters, reference the optional `DiagKit.Dbc.Workbook` extension package or use the `diagkit-dbc workbook template/export/import/validate` commands from `DiagKit.Dbc.Tool`. Import reads a `.xlsx` DBC semantic table file by itself; it is not CAN trace data, signal samples, EOL test scripts, or source-preserving DBC editing.
 
 J1939 is considered in the public boundaries, but the full J1939 protocol stack is not implemented in this package. Lenient loading may preserve J1939/transport payload metadata beyond 64 bytes; `DbcChannelRuntime` and CAN/CAN FD frame APIs only process messages where `SupportsSingleFrameRuntime` is `true`. Future protocol-specific behavior belongs in a separate extension layer.
 

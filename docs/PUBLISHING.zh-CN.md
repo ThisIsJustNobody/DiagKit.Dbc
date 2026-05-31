@@ -6,8 +6,8 @@
 
 当前计划预览版本：
 
-- tag: `v1.2.0-preview`
-- package version: `1.2.0-preview`
+- tag: `v1.2.0-preview.1`
+- package version: `1.2.0-preview.1`
 - package id: `DiagKit.Dbc`
 - license: MIT
 
@@ -56,9 +56,9 @@ dotnet run --project tests/DiagKit.Dbc.Benchmarks/DiagKit.Dbc.Benchmarks.csproj 
 当前预览版 tag 示例：
 
 ```bash
-git tag v1.2.0-preview
+git tag v1.2.0-preview.1
 git push origin main
-git push origin v1.2.0-preview
+git push origin v1.2.0-preview.1
 ```
 
 如果当前预览版之后还需要继续发布预览，使用点分编号或新的预览基线，例如 `v1.2.0-preview.1`、`v1.2.0-preview.2` 或 `v1.2.1-preview`。
@@ -81,7 +81,7 @@ MinVer 使用 `v` 作为 tag prefix。没有新 tag 的提交会生成递增的 
 
 1. 在本地完成预检和包内容检查。
 2. 确认 `main` 已包含要发布的提交。
-3. 创建目标 tag，例如当前计划预览版 `v1.2.0-preview`，或后续预览版 `v1.2.0-preview.1`。
+3. 创建目标 tag，例如当前计划预览版 `v1.2.0-preview.1`，或后续预览版 `v1.2.0-preview.2`。
 4. 推送 `main`，等待 `CI` workflow 通过。
 5. 推送 tag，触发 `Release` workflow。
 6. 在 GitHub Actions 检查发布作业；发布成功后确认 NuGet 页面和 GitHub Release。

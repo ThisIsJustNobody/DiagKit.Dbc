@@ -515,6 +515,33 @@ public sealed class DbcMessageBuilder
     }
 
     /// <summary>
+    /// 按名称取得当前 message 下的唯一 signal builder。<br/>
+    /// Gets a unique signal builder by name within this message.
+    /// </summary>
+    public DbcSignalBuilder GetSignal(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        DbcSignalBuilder? match = null;
+        foreach (var signal in signals)
+        {
+            if (!signal.MatchesName(name))
+            {
+                continue;
+            }
+
+            if (match is not null)
+            {
+                throw new DbcException($"Signal '{name}' is ambiguous in message '{Name}'.");
+            }
+
+            match = signal;
+        }
+
+        return match ?? throw new DbcException($"Signal '{name}' was not found in message '{Name}'.");
+    }
+
+    /// <summary>
     /// 添加 signal。<br/>
     /// Adds a signal.
     /// </summary>
@@ -772,5 +799,10 @@ public sealed class DbcSignalBuilder
             TimeoutTimeMs,
             SourceName,
             NameAliases);
+    }
+
+    internal bool MatchesName(string candidate)
+    {
+        return DbcDocumentBuilder.MatchesName(Name, SourceName, NameAliases, candidate);
     }
 }

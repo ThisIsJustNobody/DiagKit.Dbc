@@ -120,6 +120,15 @@ public sealed class DbcDocument
     internal int RuntimeToken { get; }
 
     /// <summary>
+    /// 从当前不可变文档创建可编辑 builder。<br/>
+    /// Creates an editable builder from this immutable document.
+    /// </summary>
+    public DbcDocumentBuilder ToBuilder()
+    {
+        return DbcDocumentBuilder.FromDocument(this);
+    }
+
+    /// <summary>
     /// 按节点名查找 DBC 节点，名称匹配使用 ordinal 大小写敏感规则。<br/>
     /// Resolves a node by name using ordinal case-sensitive matching.
     /// </summary>

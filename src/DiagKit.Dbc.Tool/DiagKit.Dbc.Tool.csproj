@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DiagKit.Dbc.Tool</RootNamespace>
+    <AssemblyName>diagkit-dbc</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>diagkit-dbc</ToolCommandName>
+
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>1.0</MinVerMinimumMajorMinor>
+    <MinVerDefaultPreReleaseIdentifiers>preview</MinVerDefaultPreReleaseIdentifiers>
+    <ContinuousIntegrationBuild Condition="'$(Configuration)' == 'Release' Or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <PackageId>DiagKit.Dbc.Tool</PackageId>
+    <Title>DiagKit DBC Tool</Title>
+    <Description>Command-line tools for DiagKit.Dbc, including DBC Excel format template, export, import, and validation.</Description>
+    <Authors>Eric YaRu YANG</Authors>
+    <Copyright>Copyright (c) 2026 Eric YaRu YANG</Copyright>
+    <PackageTags>can;canfd;dbc;excel;xlsx;cli;automotive;diagnostics</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiagKit.Dbc\DiagKit.Dbc.csproj" />
+    <ProjectReference Include="..\DiagKit.Dbc.Workbook\DiagKit.Dbc.Workbook.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

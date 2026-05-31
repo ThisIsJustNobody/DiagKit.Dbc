@@ -66,6 +66,41 @@ public sealed class DbcDocumentBuilderTests
     }
 
     [TestMethod]
+    public void FromDocument_GetSignal_EditsExistingSignal()
+    {
+        var ecu = new DbcNode("ECU");
+        var tool = new DbcNode("Tool");
+        var original = new DbcDocument(
+            [ecu, tool],
+            [
+                new DbcMessage(
+                    new DbcRawMessageId(256),
+                    "Status",
+                    8,
+                    ecu,
+                    [new DbcSignal("Speed", 0, 16, DbcByteOrder.Intel, DbcSignalValueType.Unsigned, 0.1, 0, 0, 250, "km/h", [tool])]),
+            ]);
+
+        var builder = original.ToBuilder();
+        builder.GetMessage("Status")
+            .GetSignal("Speed")
+            .WithScaling(0.125, -10)
+            .WithRange(-10, 500)
+            .WithUnit("rpm")
+            .WithComment("edited signal");
+
+        var reloaded = DbcLoader.LoadTextDocumentOrThrow(DbcWriter.WriteTextOrThrow(builder.Build()));
+        var signal = reloaded.ResolveSignal("Status", "Speed");
+
+        Assert.AreEqual(0.125, signal.Factor);
+        Assert.AreEqual(-10, signal.Offset);
+        Assert.AreEqual(-10, signal.Minimum);
+        Assert.AreEqual(500, signal.Maximum);
+        Assert.AreEqual("rpm", signal.Unit);
+        Assert.AreEqual("edited signal", signal.Comment);
+    }
+
+    [TestMethod]
     public void FromDocument_SourceNameNodeReferences_BuildsWritableDocument()
     {
         var ecu = new DbcNode("LongEngineController", sourceName: "ECU");

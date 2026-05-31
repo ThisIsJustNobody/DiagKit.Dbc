@@ -13,7 +13,11 @@ DiagKit.Dbc 是面向 .NET 10 的 DBC 运行时核心库，用于诊断工具和
 
 ```text
 src/DiagKit.Dbc              产品库与 NuGet 包内容
+src/DiagKit.Dbc.Workbook     DBC Excel 格式扩展包
+src/DiagKit.Dbc.Tool         DBC Excel export/import/validate CLI 工具
 tests/DiagKit.Dbc.Tests      单元、conformance、runtime 和 fuzz 测试
+tests/DiagKit.Dbc.Workbook.Tests  Workbook 导出/导入测试
+tests/DiagKit.Dbc.Tool.Tests      CLI 测试
 tests/DiagKit.Dbc.Benchmarks benchmark、soak 和 DBC corpus 验证入口
 DiagKit.Dbc.slnx             解决方案
 ```
@@ -69,6 +73,31 @@ builder.AddMessage(new DbcRawMessageId(256), "Status", 8, "ECU")
 var text = DbcWriter.WriteTextOrThrow(builder.Build());
 ```
 
+## DBC Excel 格式
+
+Excel 编辑位于独立扩展包 `DiagKit.Dbc.Workbook`，核心 `DiagKit.Dbc` 不包含 Excel API。`.xlsx` 文件是 DBC 的通用语义表格格式：只包含 `Network`、`Nodes`、`Messages`、`Signals`、`ValueDescriptions`、`MultiplexRanges`、`EnvironmentVariables`、`AttributeDefinitions`、`Attributes` 和 relation attribute 等 DBC 实体表，不包含 manifest、readme sheet、来源路径/哈希或内部对象 key。
+
+可以创建空模板，也可以先从 DBC 导出单个 `.xlsx`，之后编辑这些 DBC 语义表，再只基于这个 Excel 文件导入并输出 normalized DBC。该能力不是 CAN trace、波形采样、EOL 测试脚本，也不是供应商 DBC 原文件的保格式 round-trip。导入后仍会走 `DbcWriter` validation；`Vector__XXX`、`VFrameFormat`、`Gen*` 定时/发送类型元数据和 Vector independent signals 等会按 normalized DBC 输出能力规范化。
+
+```csharp
+using DiagKit.Dbc.Workbook;
+
+var document = DbcLoader.LoadDocumentOrThrow("vehicle.dbc");
+DbcWorkbookExporter.WriteWorkbookOrThrow("edit.xlsx", document);
+
+var imported = DbcWorkbookImporter.ImportWorkbookFile("edit.xlsx").GetDocumentOrThrow();
+var normalized = DbcWriter.WriteTextOrThrow(imported);
+```
+
+也可以使用 CLI：
+
+```bash
+diagkit-dbc workbook template -o edit.xlsx
+diagkit-dbc workbook export vehicle.dbc -o edit.xlsx
+diagkit-dbc workbook validate edit.xlsx
+diagkit-dbc workbook import edit.xlsx -o normalized.dbc
+```
+
 ## 快速开始
 
 ```csharp
@@ -96,7 +125,7 @@ dotnet run --project tests/DiagKit.Dbc.Benchmarks/DiagKit.Dbc.Benchmarks.csproj 
 
 ## 包状态
 
-本项目使用 MIT 许可证。NuGet 包版本由 MinVer 根据 Git tag 自动生成，tag 前缀为 `v`，项目文件不硬编码发布版本号。下一次计划预览 tag 为 `v1.2.0-preview`。CI 覆盖 pull request 以及 `main`、`master`、`release/**` 分支 push；推送 tag 后自动发布 NuGet 并创建 GitHub Release。
+本项目使用 MIT 许可证。NuGet 包版本由 MinVer 根据 Git tag 自动生成，tag 前缀为 `v`，项目文件不硬编码发布版本号。下一次计划预览 tag 为 `v1.2.0-preview.1`。CI 覆盖 pull request 以及 `main`、`master`、`release/**` 分支 push；推送 tag 后自动发布 NuGet 并创建 GitHub Release。
 
 发布说明、贡献指南和安全漏洞报告方式见 [CHANGELOG.md](CHANGELOG.md)、[CONTRIBUTING.md](CONTRIBUTING.md) 和 [SECURITY.md](SECURITY.md)。
 发布流程见 [发布清单](docs/PUBLISHING.zh-CN.md)。
