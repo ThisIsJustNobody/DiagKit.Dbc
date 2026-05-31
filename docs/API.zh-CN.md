@@ -215,6 +215,38 @@ var result = DbcWriter.WriteText(document, new DbcWriterOptions
 
 当前已实测可作为 known-good 的第 5 类边界包括 `EV_`、`BO_TX_BU_`、`BA_DEF_ EV_`、`BA_DEF_REL_` 和 `BA_DEF_DEF_REL_`。普通 `BA_ ... EV_ ...` 属性赋值和 `BA_REL_` 赋值不进入 known-good 输出，除非后续获得真实 Vector/CANdb++ 可打开样例或官方语法。
 
+## DBC Excel 格式
+
+`DiagKit.Dbc.Workbook` 是独立扩展包，不属于核心 runtime 热路径。它复用 `DbcDocument` 与 `DbcDiagnostic`，把 `.xlsx` 作为 DBC 的通用语义表格格式：
+
+- 导出的 `.xlsx` 只包含 DBC 语义实体表：`Network`、`Nodes`、`Messages`、`Signals`、`ValueDescriptions`、`MultiplexRanges`、`EnvironmentVariables`、`AttributeDefinitions`、`Attributes`、`RelationAttributeDefinitions`、`RelationAttributeDefaults`、`RelationAttributes`。
+- Excel 文件不包含 `_Readme`、`_Manifest`、`schema_version`、`profile`、`generator`、来源路径/哈希或内部对象 key。
+- `Messages` / `Signals` 是主要编辑表，使用 `message_name` 和 `signal_name` 等自然引用；可修改名称、CAN ID、DLC、缩放、范围、单位、接收节点、复用、初始值、发送类型、超时和注释等常用参数。
+- 导入时只读取 Excel 本身生成 `DbcDocument`，最终仍由 `DbcWriter` validation 和 normalized writer 输出 DBC。
+
+该能力不是 CAN trace、波形采样、EOL 测试脚本，也不是供应商 DBC 原文件的保格式 round-trip。
+
+```csharp
+using DiagKit.Dbc.Workbook;
+
+var document = DbcLoader.LoadDocumentOrThrow("vehicle.dbc");
+DbcWorkbookExporter.WriteWorkbookOrThrow("edit.xlsx", document);
+
+var imported = DbcWorkbookImporter.ImportWorkbookFile("edit.xlsx").GetDocumentOrThrow();
+var dbcText = DbcWriter.WriteTextOrThrow(imported);
+```
+
+CLI 用法：
+
+```bash
+diagkit-dbc workbook template -o edit.xlsx
+diagkit-dbc workbook export vehicle.dbc -o edit.xlsx
+diagkit-dbc workbook validate edit.xlsx
+diagkit-dbc workbook import edit.xlsx -o normalized.dbc
+```
+
+删除行即删除对象；缺少可选实体表按空表处理。导入时以 `can_id` 和 `id_format` 生成 DBC raw ID。`Vector__XXX` 仍是 DBC writer 的空 receiver/空 transmitter 哨兵，不能作为真实节点导入。`VFrameFormat`、`GenMsgCycleTime`、`GenMsgSendType`、`GenMsgTimeoutTime`、`GenSigStartValue`、`GenSigSendType`、`GenSigTimeoutTime` 等元数据由语义列承载并由导入器生成必要属性定义；`VECTOR__INDEPENDENT_SIG_MSG` 这类 Vector 伪消息不会写回 normalized DBC。
+
 ## CAN ID 与 DBC 原始 ID
 
 公共运行时 API 使用 `CanIdentifier`：

@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DiagKit.Dbc.Workbook</RootNamespace>
+    <AssemblyName>DiagKit.Dbc.Workbook</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>true</IsPackable>
+
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>1.0</MinVerMinimumMajorMinor>
+    <MinVerDefaultPreReleaseIdentifiers>preview</MinVerDefaultPreReleaseIdentifiers>
+    <ContinuousIntegrationBuild Condition="'$(Configuration)' == 'Release' Or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <PackageId>DiagKit.Dbc.Workbook</PackageId>
+    <Title>DiagKit DBC Workbook</Title>
+    <Description>DBC Excel semantic table export, template, and import for editing DiagKit.Dbc messages, signals, value descriptions, nodes, environment variables, and attribute metadata.</Description>
+    <Authors>Eric YaRu YANG</Authors>
+    <Copyright>Copyright (c) 2026 Eric YaRu YANG</Copyright>
+    <PackageTags>can;canfd;dbc;excel;xlsx;automotive;diagnostics</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ThisIsJustNobody/DiagKit.Dbc.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageReleaseNotes>DBC Excel format extension for creating templates, exporting DBC semantic tables to human-editable .xlsx files, and importing Excel files back to normalized DBC documents.</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiagKit.Dbc\DiagKit.Dbc.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

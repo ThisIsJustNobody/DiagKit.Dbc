@@ -1,10 +1,19 @@
 # 变更日志
 
-本文件记录项目的重要变更。包版本由 Git tag 通过 MinVer 自动生成；当前计划预览版本为 `1.2.0-preview`。
+本文件记录项目的重要变更。包版本由 Git tag 通过 MinVer 自动生成；当前计划预览版本为 `1.2.0-preview.1`。
 
 ## Unreleased
 
 - 暂无。
+
+## 1.2.0-preview.1 - 2026-05-31
+
+### DBC Excel 格式
+
+- Added `DiagKit.Dbc.Workbook`, an optional extension package that exports DBC documents to generic DBC semantic `.xlsx` tables and imports those Excel files back to normalized DBC documents.
+- Added `DiagKit.Dbc.Tool`, a .NET tool with `workbook template`、`workbook export`、`workbook validate` 和 `workbook import` commands.
+- Excel exports now contain only DBC semantic sheets such as `Network`, `Nodes`, `Messages`, `Signals`, `ValueDescriptions`, `MultiplexRanges`, `EnvironmentVariables`, and attribute/relation tables; no `_Readme`、`_Manifest`、schema/profile/generator metadata, source path/hash, or internal object keys are written.
+- Excel import now fails closed on invalid enum cells instead of silently falling back to defaults, and validates `MultiplexRanges.multiplexor_signal_name` against the signal-level multiplexor column.
 
 ## 1.2.0-preview - 2026-05-29
 

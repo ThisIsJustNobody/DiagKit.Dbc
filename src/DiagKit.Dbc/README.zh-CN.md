@@ -29,7 +29,9 @@
 
 ## 范围边界
 
-本包保持硬件无关，不依赖 CanHub、Vector、ZLG、WPF、CSV 业务流程或任何硬件 SDK。宿主应用负责把硬件帧转换为 `DbcFrameView`，并通过 `IDbcFrameSink` 消费待发送帧。
+本包保持硬件无关，不依赖 CanHub、Vector、ZLG、WPF、Excel/CSV 业务流程或任何硬件 SDK。宿主应用负责把硬件帧转换为 `DbcFrameView`，并通过 `IDbcFrameSink` 消费待发送帧。
+
+需要通过 Excel 批量编辑 DBC 常用参数时，请引用独立扩展包 `DiagKit.Dbc.Workbook`，或使用 `DiagKit.Dbc.Tool` 的 `diagkit-dbc workbook template/export/import/validate` 命令。导入时只读取 `.xlsx` DBC 语义表格文件本身；它不表示 CAN trace、波形采样、EOL 测试脚本或 DBC 源文件保格式编辑。
 
 公共边界已经为 J1939 预留空间，但完整 J1939 协议栈不属于本包职责。Lenient 加载可保留超过 64 字节的 J1939/传输协议 payload 元数据；`DbcChannelRuntime` 和 CAN/CAN FD 帧 API 只处理 `SupportsSingleFrameRuntime == true` 的 message。后续协议层行为应放在独立扩展库中。
 
